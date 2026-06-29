@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useUser } from "@stackframe/stack";
+
 import { Plus, FolderKanban, Trash2 } from "lucide-react";
 import Link from "next/link";
 
@@ -12,7 +12,6 @@ interface Project {
 }
 
 export default function ProjectsPage() {
-  const user = useUser();
   const [projects, setProjects] = useState<Project[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
