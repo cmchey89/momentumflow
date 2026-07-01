@@ -4,8 +4,9 @@ import { db } from "../../../../../lib/db/client";
 import { projectStages, planTasks } from "../../../../../lib/db/schema";
 import { eq } from "drizzle-orm";
 
-interface BulkSubTask { title: string; planStart: string | null; planEnd: string | null; actualStart: string | null; actualEnd: string | null }
-interface BulkTask { title: string; planStart: string | null; planEnd: string | null; actualStart: string | null; actualEnd: string | null; subTasks: BulkSubTask[] }
+type BulkStatus = "pending" | "in_progress" | "done";
+interface BulkSubTask { title: string; planStart: string | null; planEnd: string | null; actualStart: string | null; actualEnd: string | null; status?: BulkStatus }
+interface BulkTask { title: string; planStart: string | null; planEnd: string | null; actualStart: string | null; actualEnd: string | null; status?: BulkStatus; subTasks: BulkSubTask[] }
 interface BulkStage { name: string; tasks: BulkTask[] }
 
 function inferStatus(actualStart: string | null, actualEnd: string | null): "pending" | "in_progress" | "done" {
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         title: task.title, sortOrder: taskSort++,
         planStart: task.planStart, planEnd: task.planEnd,
         actualStart: task.actualStart, actualEnd: task.actualEnd,
-        status: inferStatus(task.actualStart, task.actualEnd),
+        status: task.status ?? inferStatus(task.actualStart, task.actualEnd),
       }).returning();
       mainCreated++;
 
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           title: sub.title, sortOrder: subSort++,
           planStart: sub.planStart, planEnd: sub.planEnd,
           actualStart: sub.actualStart, actualEnd: sub.actualEnd,
-          status: inferStatus(sub.actualStart, sub.actualEnd),
+          status: sub.status ?? inferStatus(sub.actualStart, sub.actualEnd),
         });
         subCreated++;
       }

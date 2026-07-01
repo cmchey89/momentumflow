@@ -47,8 +47,8 @@ type DragCtl = {
   startDrag: (kind: "stage" | "task", id: string) => void;
 };
 
-interface BulkSubTask { title: string; planStart: string | null; planEnd: string | null; actualStart: string | null; actualEnd: string | null }
-interface BulkTask { title: string; planStart: string | null; planEnd: string | null; actualStart: string | null; actualEnd: string | null; subTasks: BulkSubTask[] }
+interface BulkSubTask { title: string; planStart: string | null; planEnd: string | null; actualStart: string | null; actualEnd: string | null; status?: StageStatus }
+interface BulkTask { title: string; planStart: string | null; planEnd: string | null; actualStart: string | null; actualEnd: string | null; status?: StageStatus; subTasks: BulkSubTask[] }
 interface BulkStage { name: string; tasks: BulkTask[] }
 
 const MONTH_LOOKUP: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
@@ -69,6 +69,34 @@ function parseFlexibleDate(raw: string): string | null {
   return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
 }
 
+function parseBulkStatus(raw: string): StageStatus | undefined {
+  const s = raw.trim().toLowerCase();
+  if (["done", "complete", "completed", "d"].includes(s)) return "done";
+  if (["in_progress", "in-progress", "in progress", "inprogress", "ongoing", "ip"].includes(s)) return "in_progress";
+  if (["pending", "not started", "not_started", "todo", "p"].includes(s)) return "pending";
+  return undefined; // left blank or unrecognized — fall back to inferring from actual dates
+}
+
+// Mirrors the server's inferStatus() in app/api/projects/[id]/bulk-import/route.ts, used only to
+// preview what status a row will get when no explicit status column is provided.
+function inferBulkStatus(actualStart: string | null, actualEnd: string | null): StageStatus {
+  if (actualEnd) return "done";
+  if (actualStart) return "in_progress";
+  return "pending";
+}
+
+const STATUS_LABEL: Record<StageStatus, string> = { pending: "Pending", in_progress: "In Progress", done: "Done" };
+const STATUS_BADGE_COLOR: Record<StageStatus, string> = {
+  pending: "bg-gray-100 text-gray-500", in_progress: "bg-amber-100 text-amber-700", done: "bg-green-100 text-green-700",
+};
+function StatusBadge({ status, explicit }: { status: StageStatus; explicit: boolean }) {
+  return (
+    <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full ${STATUS_BADGE_COLOR[status]}`} title={explicit ? "Set explicitly in the status column" : "Auto-detected from actual dates"}>
+      {STATUS_LABEL[status]}{!explicit && " (auto)"}
+    </span>
+  );
+}
+
 function parseBulkText(text: string): { stages: BulkStage[]; errors: string[] } {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const stages: BulkStage[] = [];
@@ -84,9 +112,10 @@ function parseBulkText(text: string): { stages: BulkStage[]; errors: string[] } 
     const planEnd = parseFlexibleDate(parts[3] || "");
     const actualStart = parseFlexibleDate(parts[4] || "");
     const actualEnd = parseFlexibleDate(parts[5] || "");
+    const status = parseBulkStatus(parts[6] || "");
 
     if (![1, 2, 3].includes(level) || !title) {
-      errors.push(`Line ${i + 1}: couldn't read "${line}" — expected "1/2/3 | title | plan start | plan end | actual start | actual end"`);
+      errors.push(`Line ${i + 1}: couldn't read "${line}" — expected "1/2/3 | title | plan start | plan end | actual start | actual end | status"`);
       return;
     }
     if (level === 1) {
@@ -95,11 +124,11 @@ function parseBulkText(text: string): { stages: BulkStage[]; errors: string[] } 
       currentTask = null;
     } else if (level === 2) {
       if (!currentStage) { errors.push(`Line ${i + 1}: main task "${title}" has no stage above it`); return; }
-      currentTask = { title, planStart, planEnd, actualStart, actualEnd, subTasks: [] };
+      currentTask = { title, planStart, planEnd, actualStart, actualEnd, status, subTasks: [] };
       currentStage.tasks.push(currentTask);
     } else {
       if (!currentTask) { errors.push(`Line ${i + 1}: sub task "${title}" has no main task above it`); return; }
-      currentTask.subTasks.push({ title, planStart, planEnd, actualStart, actualEnd });
+      currentTask.subTasks.push({ title, planStart, planEnd, actualStart, actualEnd, status });
     }
   });
 
@@ -1451,13 +1480,16 @@ function BulkImportModal({ onClose, onImport }: { onClose: () => void; onImport:
       {!parsed ? (
         <>
           <p className="text-sm text-gray-500 mb-2">
-            One line per row, separated by <code className="bg-gray-100 px-1 rounded">|</code>: <b>level</b> (1=stage, 2=main task, 3=sub task) | <b>title</b> | plan start | plan end | actual start | actual end. Dates are optional.
+            One line per row, separated by <code className="bg-gray-100 px-1 rounded">|</code>: <b>level</b> (1=stage, 2=main task, 3=sub task) | <b>title</b> | plan start | plan end | actual start | actual end | <b>status</b>. Dates and status are optional.
+          </p>
+          <p className="text-sm text-gray-500 mb-2">
+            Leave status blank to auto-detect from actual dates (no actual dates → Pending, actual start only → In Progress, actual end → Done), or set it explicitly with <code className="bg-gray-100 px-1 rounded">pending</code>, <code className="bg-gray-100 px-1 rounded">in_progress</code>, or <code className="bg-gray-100 px-1 rounded">done</code>.
           </p>
           <pre className="text-sm bg-gray-50 border border-gray-200 rounded-lg p-2 mb-2 whitespace-pre-wrap text-gray-500 leading-relaxed">
 {`1 | Pre-Quotation
-2 | Initiate discussion on requirements | 10-Sep-25 | 17-Sep-25 | 10-Sep-25 | 17-Sep-25
+2 | Initiate discussion on requirements | 10-Sep-25 | 17-Sep-25 | 10-Sep-25 | 17-Sep-25 | done
 3 | Receive query on affected infra
-2 | Next main task | 20-Sep-25 | 25-Sep-25`}
+2 | Next main task | 20-Sep-25 | 25-Sep-25 | | | in_progress`}
           </pre>
           <textarea value={text} onChange={e => setText(e.target.value)} rows={10}
             placeholder="Paste or type here…"
@@ -1487,12 +1519,14 @@ function BulkImportModal({ onClose, onImport }: { onClose: () => void; onImport:
                       {t.title}
                       {t.planStart && <span className="text-gray-400"> plan: {fmtDate(t.planStart)}–{fmtDate(t.planEnd)}</span>}
                       {t.actualStart && <span className="text-blue-500"> actual: {fmtDate(t.actualStart)}–{fmtDate(t.actualEnd)}</span>}
+                      <StatusBadge status={t.status ?? inferBulkStatus(t.actualStart, t.actualEnd)} explicit={!!t.status} />
                     </div>
                     {t.subTasks.map((st, k) => (
                       <div key={k} className="px-8 py-1 text-[11px] text-gray-500 border-b border-gray-100">
                         {st.title}
                         {st.planStart && <span className="text-gray-400"> plan: {fmtDate(st.planStart)}–{fmtDate(st.planEnd)}</span>}
                         {st.actualStart && <span className="text-blue-500"> actual: {fmtDate(st.actualStart)}–{fmtDate(st.actualEnd)}</span>}
+                        <StatusBadge status={st.status ?? inferBulkStatus(st.actualStart, st.actualEnd)} explicit={!!st.status} />
                       </div>
                     ))}
                   </div>
