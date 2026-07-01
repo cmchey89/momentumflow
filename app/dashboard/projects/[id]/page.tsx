@@ -113,8 +113,8 @@ const CLAIM_COLORS: Record<ClaimStatus, string> = {
   paid: "bg-green-100 text-green-700",
 };
 const STAGE_DOT: Record<StageStatus, string> = { pending: "bg-gray-300", in_progress: "bg-amber-500", done: "bg-green-600" };
-const TAB_LABELS: Record<"background" | "plan" | "stages" | "finance", string> = {
-  background: "Background", plan: "Plan", stages: "Task breakdown", finance: "Finance",
+const TAB_LABELS: Record<"background" | "plan" | "finance", string> = {
+  background: "Background", plan: "Plan", finance: "Finance",
 };
 
 function fmtMoney(n: number) { return `$${n.toLocaleString()}`; }
@@ -145,7 +145,7 @@ function longPressHandlers(onActivate: () => void, delay = 500) {
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [tab, setTab] = useState<"background" | "plan" | "stages" | "finance">("background");
+  const [tab, setTab] = useState<"background" | "plan" | "finance">("background");
   const [project, setProject] = useState<Project | null>(null);
 
   // background
@@ -474,7 +474,7 @@ export default function ProjectDetailPage() {
       </div>
 
       <div className="flex border-b border-gray-200 mb-6">
-        {(["background", "plan", "stages", "finance"] as const).map(t => (
+        {(["background", "plan", "finance"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm -mb-px border-b-2 ${tab === t ? "border-blue-600 text-blue-600 font-medium" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
             {TAB_LABELS[t]}
@@ -495,7 +495,7 @@ export default function ProjectDetailPage() {
         <PlanTab
           stages={stages} tasks={tasks} comments={comments}
           openTasks={openTasks} toggleOpen={toggleOpen} expandAllTasks={expandAllTasks} collapseAllTasks={collapseAllTasks}
-          openComments={openComments} toggleComments={toggleComments}
+          openComments={openComments} toggleComments={toggleComments} closeAllComments={closeAllComments}
           submitRemark={submitRemark} attachPhoto={attachPhoto}
           toggleMilestone={toggleMilestone} deleteTask={deleteTask} patchTask={patchTask} patchStage={patchStage}
           addStage={addStage} deleteStage={deleteStage}
@@ -503,19 +503,6 @@ export default function ProjectDetailPage() {
           taskView={taskView} setTaskView={setTaskView}
           dragging={dragging} hoverId={hoverId} startDrag={startDrag}
           showBulkImport={showBulkImport} setShowBulkImport={setShowBulkImport}
-        />
-      )}
-
-      {tab === "stages" && (
-        <StagesTab
-          stages={stages} tasks={tasks} comments={comments}
-          openTasks={openTasks} toggleOpen={toggleOpen} expandAllTasks={expandAllTasks} collapseAllTasks={collapseAllTasks}
-          openComments={openComments} toggleComments={toggleComments} closeAllComments={closeAllComments}
-          submitRemark={submitRemark} attachPhoto={attachPhoto}
-          patchTask={patchTask} patchStage={patchStage}
-          addStage={addStage} deleteStage={deleteStage}
-          dragging={dragging} hoverId={hoverId} startDrag={startDrag}
-          taskView={taskView} setTaskView={setTaskView}
         />
       )}
 
@@ -677,7 +664,7 @@ function BackgroundTab(props: {
       </div>
 
       <div className="border-t border-gray-100 pt-5">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Task breakdown (read-only — edit in the Plan tab, timeline is in Task breakdown tab)</p>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Task breakdown (read-only — edit in the Plan tab)</p>
         <ReadOnlyTaskTree stages={stages} tasks={tasks} openTasks={openTasks} toggleOpen={toggleOpen} />
       </div>
     </div>
@@ -757,7 +744,7 @@ function ReadOnlyTaskRow({ task, subTasks, openTasks, toggleOpen }: {
 function PlanTab(props: {
   stages: Stage[]; tasks: PlanTask[]; comments: Comment[];
   openTasks: Set<string>; toggleOpen: (id: string) => void; expandAllTasks: () => void; collapseAllTasks: () => void;
-  openComments: Set<string>; toggleComments: (id: string) => void;
+  openComments: Set<string>; toggleComments: (id: string) => void; closeAllComments: () => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
   toggleMilestone: (t: PlanTask) => void; deleteTask: (id: string) => void; patchTask: (id: string, v: Partial<PlanTask>) => void; patchStage: (id: string, v: Partial<Stage>) => void;
   addStage: (name: string) => void; deleteStage: (id: string) => void;
@@ -769,7 +756,7 @@ function PlanTab(props: {
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <p className="text-xs text-gray-400">Build and adjust the stage / main task / sub task structure and planned dates here. Background shows a read-only summary of this; Stages is for logging actual progress and remarks.</p>
+        <p className="text-xs text-gray-400">Build the stage / main task / sub task structure, set planned dates, and log actual progress and remarks here. Background shows a read-only summary.</p>
         <button onClick={() => props.setShowBulkImport(true)} className="flex items-center gap-1.5 border border-gray-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 flex-shrink-0 ml-3">
           <Upload className="w-3.5 h-3.5" /> Bulk import from text
         </button>
@@ -793,7 +780,7 @@ function Row({ label, value }: { label: string; value: string | null | undefined
 function TaskTree(props: {
   stages: Stage[]; tasks: PlanTask[]; comments: Comment[];
   openTasks: Set<string>; toggleOpen: (id: string) => void; expandAllTasks: () => void; collapseAllTasks: () => void;
-  openComments: Set<string>; toggleComments: (id: string) => void;
+  openComments: Set<string>; toggleComments: (id: string) => void; closeAllComments: () => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
   toggleMilestone: (t: PlanTask) => void; deleteTask: (id: string) => void; patchTask: (id: string, v: Partial<PlanTask>) => void; patchStage: (id: string, v: Partial<Stage>) => void;
   addStage: (name: string) => void; deleteStage: (id: string) => void;
@@ -803,7 +790,7 @@ function TaskTree(props: {
 } & DragCtl) {
   const {
     stages, tasks, comments, openTasks, toggleOpen, expandAllTasks, collapseAllTasks,
-    openComments, toggleComments, submitRemark, attachPhoto,
+    openComments, toggleComments, closeAllComments, submitRemark, attachPhoto,
     toggleMilestone, deleteTask, patchTask, patchStage, addStage, deleteStage,
     addingTaskFor, setAddingTaskFor, addTask, taskView, setTaskView,
     dragging, hoverId, startDrag,
@@ -820,6 +807,7 @@ function TaskTree(props: {
           </div>
           <button onClick={expandAllTasks} className="text-xs text-blue-600 hover:underline">Expand all</button>
           <button onClick={collapseAllTasks} className="text-xs text-blue-600 hover:underline">Collapse all</button>
+          <button onClick={closeAllComments} className="text-xs text-blue-600 hover:underline">Close remarks</button>
         </div>
       </div>
 
@@ -827,8 +815,8 @@ function TaskTree(props: {
         <GanttView stages={stages} tasks={tasks} />
       ) : (
       <div className="border border-gray-200 rounded-xl overflow-hidden">
-        <div className="grid grid-cols-[1fr_70px_70px_70px_70px_60px] gap-1 bg-gray-50 border-b border-gray-200 px-2.5 py-1.5 text-[10px] font-medium text-gray-400 uppercase">
-          <span>Activity</span><span>Plan start</span><span>Plan end</span><span>Act. start</span><span>Act. end</span><span></span>
+        <div className="grid grid-cols-[1fr_60px_60px_60px_60px_62px_82px] gap-1 bg-gray-50 border-b border-gray-200 px-2.5 py-1.5 text-[10px] font-medium text-gray-400 uppercase">
+          <span>Activity</span><span>Plan start</span><span>Plan end</span><span>Act. start</span><span>Act. end</span><span>Status</span><span></span>
         </div>
 
         {stages.map(stage => {
@@ -836,7 +824,7 @@ function TaskTree(props: {
           return (
             <div key={stage.id}>
               <div data-drop-id={stage.id} {...longPressHandlers(() => startDrag("stage", stage.id))}
-                className={`grid grid-cols-[1fr_70px_70px_70px_70px_60px] gap-1 items-center px-2.5 py-2 border-b border-gray-200 cursor-pointer select-none ${dragging?.id === stage.id ? "opacity-40" : "bg-gray-50"} ${hoverId === stage.id && dragging && dragging.id !== stage.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}
+                className={`grid grid-cols-[1fr_60px_60px_60px_60px_62px_82px] gap-1 items-center px-2.5 py-2 border-b border-gray-200 cursor-pointer select-none ${dragging?.id === stage.id ? "opacity-40" : "bg-gray-50"} ${hoverId === stage.id && dragging && dragging.id !== stage.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}
                 onClick={() => toggleOpen(stage.id)}>
                 <div className="flex items-center gap-1.5 min-w-0">
                   <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${openTasks.has(stage.id) ? "rotate-90" : ""}`} />
@@ -847,6 +835,12 @@ function TaskTree(props: {
                 <span className="text-xs text-gray-400">{fmtDate(stage.planEnd)}</span>
                 <span className="text-xs text-blue-500">{fmtDate(stage.actualStart)}</span>
                 <span className="text-xs text-blue-500">{fmtDate(stage.actualEnd)}</span>
+                <select value={stage.status} onChange={e => { e.stopPropagation(); patchStage(stage.id, { status: e.target.value as StageStatus }); }} onClick={e => e.stopPropagation()}
+                  className="text-[10px] border border-gray-200 rounded px-1 py-0.5">
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In progress</option>
+                  <option value="done">Done</option>
+                </select>
                 <div className="flex gap-1 justify-end">
                   <button onClick={e => { e.stopPropagation(); setAddingTaskFor({ stageId: stage.id, parentId: null }); }} className="w-5 h-5 border border-gray-200 rounded flex items-center justify-center hover:border-blue-300"><Plus className="w-3 h-3" /></button>
                   <button onClick={e => { e.stopPropagation(); deleteStage(stage.id); }} className="w-5 h-5 border border-gray-200 rounded flex items-center justify-center hover:border-red-300 text-gray-400 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
@@ -1023,7 +1017,7 @@ function MainTaskRow({
   return (
     <>
       <div data-drop-id={task.id} {...longPressHandlers(() => startDrag("task", task.id))}
-        className={`grid grid-cols-[1fr_70px_70px_70px_70px_60px] gap-1 items-center pl-5 pr-2.5 py-1.5 border-b border-gray-100 cursor-pointer select-none ${dragging?.id === task.id ? "opacity-40" : "bg-white hover:bg-gray-50"} ${hoverId === task.id && dragging && dragging.id !== task.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}
+        className={`grid grid-cols-[1fr_60px_60px_60px_60px_62px_82px] gap-1 items-center pl-5 pr-2.5 py-1.5 border-b border-gray-100 cursor-pointer select-none ${dragging?.id === task.id ? "opacity-40" : "bg-white hover:bg-gray-50"} ${hoverId === task.id && dragging && dragging.id !== task.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}
         onClick={() => hasChildren && toggleOpen(task.id)}>
         <div className="flex items-center gap-1.5 min-w-0">
           {hasChildren ? <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${openTasks.has(task.id) ? "rotate-90" : ""}`} /> : <span className="w-3 text-center text-gray-300 text-xs">—</span>}
@@ -1035,6 +1029,12 @@ function MainTaskRow({
         <DateCell value={task.planEnd} onChange={v => patchTask(task.id, { planEnd: v })} />
         <DateCell value={task.actualStart} onChange={v => patchTask(task.id, { actualStart: v })} accent />
         <DateCell value={task.actualEnd} onChange={v => patchTask(task.id, { actualEnd: v })} accent />
+        <select value={task.status} onChange={e => { e.stopPropagation(); patchTask(task.id, { status: e.target.value as StageStatus }); }} onClick={e => e.stopPropagation()}
+          className="text-[10px] border border-gray-200 rounded px-1 py-0.5">
+          <option value="pending">Pending</option>
+          <option value="in_progress">In progress</option>
+          <option value="done">Done</option>
+        </select>
         <div className="flex gap-1 justify-end" onClick={e => e.stopPropagation()}>
           <button onClick={() => toggleComments(task.id)} className={`w-5 h-5 border rounded flex items-center justify-center ${openComments.has(task.id) || taskComments.length ? "border-blue-400 text-blue-600 bg-blue-50" : "border-gray-200 text-gray-400"}`}><MessageSquare className="w-3 h-3" /></button>
           <button onClick={() => toggleMilestone(task)} title="Toggle milestone" className={`w-5 h-5 border rounded flex items-center justify-center ${task.isMilestone ? "border-purple-300 text-purple-600 bg-purple-50" : "border-gray-200 text-gray-400"}`}><Flag className="w-3 h-3" /></button>
@@ -1069,7 +1069,7 @@ function SubTaskRow({
   return (
     <>
       <div data-drop-id={task.id} {...longPressHandlers(() => startDrag("task", task.id))}
-        className={`grid grid-cols-[1fr_70px_70px_70px_70px_60px] gap-1 items-center pl-9 pr-2.5 py-1.5 border-b border-gray-100 select-none ${dragging?.id === task.id ? "opacity-40" : "bg-white"} ${hoverId === task.id && dragging && dragging.id !== task.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}>
+        className={`grid grid-cols-[1fr_60px_60px_60px_60px_62px_82px] gap-1 items-center pl-9 pr-2.5 py-1.5 border-b border-gray-100 select-none ${dragging?.id === task.id ? "opacity-40" : "bg-white"} ${hoverId === task.id && dragging && dragging.id !== task.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}>
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="w-1.5 h-[1.5px] bg-gray-300 flex-shrink-0" />
           <EditableName value={task.title} onSave={v => patchTask(task.id, { title: v })} className="text-xs text-gray-500 truncate" />
@@ -1078,6 +1078,12 @@ function SubTaskRow({
         <DateCell value={task.planEnd} onChange={v => patchTask(task.id, { planEnd: v })} />
         <DateCell value={task.actualStart} onChange={v => patchTask(task.id, { actualStart: v })} accent />
         <DateCell value={task.actualEnd} onChange={v => patchTask(task.id, { actualEnd: v })} accent />
+        <select value={task.status} onChange={e => patchTask(task.id, { status: e.target.value as StageStatus })}
+          className="text-[10px] border border-gray-200 rounded px-1 py-0.5">
+          <option value="pending">Pending</option>
+          <option value="in_progress">In progress</option>
+          <option value="done">Done</option>
+        </select>
         <div className="flex gap-1 justify-end">
           <button onClick={() => toggleComments(task.id)} className={`w-5 h-5 border rounded flex items-center justify-center ${openComments.has(task.id) || comments.length ? "border-blue-400 text-blue-600 bg-blue-50" : "border-gray-200 text-gray-400"}`}><MessageSquare className="w-3 h-3" /></button>
           <button onClick={() => deleteTask(task.id)} className="w-5 h-5 border border-gray-200 rounded flex items-center justify-center text-gray-400 hover:border-red-300 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
@@ -1120,144 +1126,6 @@ function CommentBox({ taskId, comments, submitRemark, attachPhoto, indent }: {
         </div>
       </div>
     </div>
-  );
-}
-
-// ── Stages Tab ──────────────────────────────────────────────────────────
-
-function StagesTab(props: {
-  stages: Stage[]; tasks: PlanTask[]; comments: Comment[];
-  openTasks: Set<string>; toggleOpen: (id: string) => void; expandAllTasks: () => void; collapseAllTasks: () => void;
-  openComments: Set<string>; toggleComments: (id: string) => void; closeAllComments: () => void;
-  submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
-  patchTask: (id: string, v: Partial<PlanTask>) => void; patchStage: (id: string, v: Partial<Stage>) => void;
-  addStage: (name: string) => void; deleteStage: (id: string) => void;
-  taskView: "list" | "timeline"; setTaskView: (v: "list" | "timeline") => void;
-} & DragCtl) {
-  const {
-    stages, tasks, comments, openTasks, toggleOpen, expandAllTasks, collapseAllTasks,
-    openComments, toggleComments, closeAllComments, submitRemark, attachPhoto, patchTask, patchStage,
-    addStage, deleteStage, dragging, hoverId, startDrag, taskView, setTaskView,
-  } = props;
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-xs text-gray-400">Log actual dates and status as work progresses. Click <MessageSquare className="w-3 h-3 inline" /> to add remarks.</p>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="flex border border-gray-200 rounded-lg overflow-hidden text-xs">
-            <button onClick={() => setTaskView("list")} className={`px-2.5 py-1 ${taskView === "list" ? "bg-gray-100 font-medium text-gray-900" : "text-gray-400"}`}>List</button>
-            <button onClick={() => setTaskView("timeline")} className={`px-2.5 py-1 border-l border-gray-200 ${taskView === "timeline" ? "bg-gray-100 font-medium text-gray-900" : "text-gray-400"}`}>Timeline</button>
-          </div>
-          {taskView === "list" && (
-            <>
-              <button onClick={expandAllTasks} className="text-xs border border-gray-300 rounded px-2 py-1">Expand all</button>
-              <button onClick={collapseAllTasks} className="text-xs border border-gray-300 rounded px-2 py-1">Collapse all</button>
-              <button onClick={closeAllComments} className="text-xs border border-gray-300 rounded px-2 py-1">Close remarks</button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {taskView === "timeline" ? (
-        <GanttView stages={stages} tasks={tasks} />
-      ) : (
-      <>
-      {stages.length === 0 && <p className="text-sm text-gray-400 text-center py-10">No stages yet — add one below.</p>}
-
-      {stages.map(stage => {
-        const mainTasks = tasks.filter(t => t.stageId === stage.id && !t.parentId);
-        return (
-          <div key={stage.id} className="bg-gray-50 border border-gray-200 rounded-xl overflow-hidden mb-4">
-            <div data-drop-id={stage.id} {...longPressHandlers(() => startDrag("stage", stage.id))}
-              className={`flex items-center gap-2 px-3 py-2.5 border-b border-gray-200 select-none ${dragging?.id === stage.id ? "opacity-40" : "bg-white"} ${hoverId === stage.id && dragging && dragging.id !== stage.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}>
-              <span className={`w-2 h-2 rounded-full ${STAGE_DOT[stage.status]}`} />
-              <EditableName value={stage.name} onSave={v => patchStage(stage.id, { name: v })} className="text-sm font-bold flex-1" />
-              <select value={stage.status} onChange={e => patchStage(stage.id, { status: e.target.value as StageStatus })} className="text-xs border border-gray-200 rounded px-1.5 py-0.5">
-                <option value="pending">Pending</option>
-                <option value="in_progress">In progress</option>
-                <option value="done">Done</option>
-              </select>
-              <button onClick={() => deleteStage(stage.id)} className="w-5 h-5 border border-gray-200 rounded flex items-center justify-center text-gray-400 hover:border-red-300 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
-            </div>
-            {mainTasks.length === 0 ? (
-              <p className="text-xs text-gray-400 px-3 py-3">No tasks yet.</p>
-            ) : mainTasks.map(mt => (
-              <StageMainTask key={mt.id} task={mt} subTasks={tasks.filter(t => t.parentId === mt.id)} comments={comments}
-                openTasks={openTasks} toggleOpen={toggleOpen} openComments={openComments} toggleComments={toggleComments}
-                submitRemark={submitRemark} attachPhoto={attachPhoto} patchTask={patchTask}
-                dragging={dragging} hoverId={hoverId} startDrag={startDrag} />
-            ))}
-          </div>
-        );
-      })}
-
-      <AddStageRow addStage={addStage} />
-      </>
-      )}
-    </div>
-  );
-}
-
-function StageMainTask({ task, subTasks, comments, openTasks, toggleOpen, openComments, toggleComments, submitRemark, attachPhoto, patchTask, dragging, hoverId, startDrag }: {
-  task: PlanTask; subTasks: PlanTask[]; comments: Comment[];
-  openTasks: Set<string>; toggleOpen: (id: string) => void; openComments: Set<string>; toggleComments: (id: string) => void;
-  submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
-  patchTask: (id: string, v: Partial<PlanTask>) => void;
-} & DragCtl) {
-  const hasChildren = subTasks.length > 0;
-  const taskComments = comments.filter(c => c.taskId === task.id);
-  return (
-    <>
-      <div data-drop-id={task.id} {...longPressHandlers(() => startDrag("task", task.id))}
-        className={`flex items-center gap-2 px-3 py-2 border-b border-gray-200 cursor-pointer select-none ${dragging?.id === task.id ? "opacity-40" : "bg-gray-50"} ${hoverId === task.id && dragging && dragging.id !== task.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}
-        onClick={() => hasChildren && toggleOpen(task.id)}>
-        {hasChildren ? <ChevronRight className={`w-3 h-3 transition-transform ${openTasks.has(task.id) ? "rotate-90" : ""}`} /> : <span className="w-3 text-center text-gray-300 text-xs">—</span>}
-        <span className={`w-1.5 h-1.5 rotate-45 flex-shrink-0 ${task.isMilestone ? "bg-purple-600" : "bg-gray-400"}`} />
-        <EditableName value={task.title} onSave={v => patchTask(task.id, { title: v })} className="text-xs flex-1" />
-        {task.isMilestone && <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full">Milestone</span>}
-        <span className="text-[10px] text-gray-400 flex-shrink-0">Plan: {fmtDate(task.planStart)}–{fmtDate(task.planEnd)}</span>
-        <span className="flex items-center gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-          <span className="text-[10px] text-blue-500">Actual:</span>
-          <DateCell value={task.actualStart} onChange={v => patchTask(task.id, { actualStart: v })} accent />
-          <span className="text-[10px] text-gray-300">–</span>
-          <DateCell value={task.actualEnd} onChange={v => patchTask(task.id, { actualEnd: v })} accent />
-        </span>
-        <select value={task.status} onChange={e => { e.stopPropagation(); patchTask(task.id, { status: e.target.value as StageStatus }); }} onClick={e => e.stopPropagation()}
-          className="text-[10px] border border-gray-200 rounded px-1 py-0.5">
-          <option value="pending">Pending</option>
-          <option value="in_progress">In progress</option>
-          <option value="done">Done</option>
-        </select>
-        <button onClick={e => { e.stopPropagation(); toggleComments(task.id); }} className={`w-5 h-5 border rounded flex items-center justify-center flex-shrink-0 ${openComments.has(task.id) || taskComments.length ? "border-blue-400 text-blue-600 bg-blue-50" : "border-gray-200 text-gray-400"}`}><MessageSquare className="w-3 h-3" /></button>
-      </div>
-      {openComments.has(task.id) && (
-        <CommentBox taskId={task.id} comments={taskComments} submitRemark={submitRemark} attachPhoto={() => attachPhoto(task.id)} indent={12} />
-      )}
-      {openTasks.has(task.id) && subTasks.map(st => {
-        const stComments = comments.filter(c => c.taskId === st.id);
-        return (
-          <div key={st.id}>
-            <div data-drop-id={st.id} {...longPressHandlers(() => startDrag("task", st.id))}
-              className={`flex items-center gap-2 pl-8 pr-3 py-1.5 border-b border-gray-200 select-none ${dragging?.id === st.id ? "opacity-40" : "bg-gray-50"} ${hoverId === st.id && dragging && dragging.id !== st.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}>
-              <span className="w-1.5 h-[1.5px] bg-gray-300 flex-shrink-0" />
-              <EditableName value={st.title} onSave={v => patchTask(st.id, { title: v })} className="text-xs text-gray-500 flex-1" />
-              <span className="text-[10px] text-gray-400 flex-shrink-0">Plan: {fmtDate(st.planStart)}–{fmtDate(st.planEnd)}</span>
-              <span className="flex items-center gap-0.5 flex-shrink-0">
-                <span className="text-[10px] text-blue-500">Actual:</span>
-                <DateCell value={st.actualStart} onChange={v => patchTask(st.id, { actualStart: v })} accent />
-                <span className="text-[10px] text-gray-300">–</span>
-                <DateCell value={st.actualEnd} onChange={v => patchTask(st.id, { actualEnd: v })} accent />
-              </span>
-              <button onClick={() => toggleComments(st.id)} className={`w-5 h-5 border rounded flex items-center justify-center flex-shrink-0 ${openComments.has(st.id) || stComments.length ? "border-blue-400 text-blue-600 bg-blue-50" : "border-gray-200 text-gray-400"}`}><MessageSquare className="w-3 h-3" /></button>
-            </div>
-            {openComments.has(st.id) && (
-              <CommentBox taskId={st.id} comments={stComments} submitRemark={submitRemark} attachPhoto={() => attachPhoto(st.id)} indent={28} />
-            )}
-          </div>
-        );
-      })}
-    </>
   );
 }
 
