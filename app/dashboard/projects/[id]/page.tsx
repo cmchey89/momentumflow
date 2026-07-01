@@ -62,7 +62,7 @@ function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString("
 // still works for opening rows or triggering rename. Movement before the
 // timer fires cancels it (treated as a scroll or misclick, not a drag).
 // Plain closure, not a hook, so it can be called fresh inside .map() callbacks.
-function longPressHandlers(onActivate: () => void, delay = 1000) {
+function longPressHandlers(onActivate: () => void, delay = 500) {
   let timer: number | null = null;
   let start: { x: number; y: number } | null = null;
   const clear = () => { if (timer !== null) { window.clearTimeout(timer); timer = null; } start = null; };
