@@ -135,9 +135,14 @@ export default function ProjectDetailPage() {
   // two sequential round trips per click.
   const addStage = async (name: string) => {
     if (!name.trim()) return;
+    const tempId = `temp-${Date.now()}`;
+    setStages(prev => [...prev, {
+      id: tempId, name, sortOrder: prev.length, status: "pending",
+      planStart: null, planEnd: null, actualStart: null, actualEnd: null,
+    }]);
     const res = await fetch(`/api/projects/${id}/stages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
     const stage = await res.json();
-    setStages(prev => [...prev, stage]);
+    setStages(prev => prev.map(s => s.id === tempId ? stage : s));
   };
   const deleteStage = async (stageId: string) => {
     if (!confirm("Delete this stage and all its tasks?")) return;
@@ -154,12 +159,25 @@ export default function ProjectDetailPage() {
   const addTask = async (stageId: string, parentId: string | null, title: string) => {
     if (!title.trim()) return;
     setAddingTaskFor(null);
+    const tempId = `temp-${Date.now()}`;
+    setTasks(prev => [...prev, {
+      id: tempId, stageId, parentId, title,
+      isMilestone: false, sortOrder: prev.length, status: "pending",
+      planStart: null, planEnd: null, actualStart: null, actualEnd: null,
+    }]);
+    // Auto-expand the stage (and parent task, for a sub task) so the new row is visible right away.
+    setOpenTasks(prev => {
+      const s = new Set(prev);
+      s.add(stageId);
+      if (parentId) s.add(parentId);
+      return s;
+    });
     const res = await fetch(`/api/stages/${stageId}/tasks`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, parentId }),
     });
     const task = await res.json();
-    setTasks(prev => [...prev, task]);
+    setTasks(prev => prev.map(t => t.id === tempId ? task : t));
   };
   const deleteTask = async (taskId: string) => {
     if (!confirm("Delete this task?")) return;
@@ -181,16 +199,20 @@ export default function ProjectDetailPage() {
 
   const submitRemark = async (taskId: string, text: string) => {
     if (!text.trim()) return;
+    const tempId = `temp-${Date.now()}`;
+    setComments(prev => [...prev, { id: tempId, taskId, authorName: "You", text, imageUrl: null, createdAt: new Date().toISOString() }]);
     const res = await fetch(`/api/plan-tasks/${taskId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
     const comment = await res.json();
-    setComments(prev => [...prev, comment]);
+    setComments(prev => prev.map(c => c.id === tempId ? comment : c));
   };
   const attachPhoto = async (taskId: string) => {
     const url = prompt("Photo URL (placeholder — no file storage wired up yet)");
     if (!url) return;
+    const tempId = `temp-${Date.now()}`;
+    setComments(prev => [...prev, { id: tempId, taskId, authorName: "You", text: null, imageUrl: url, createdAt: new Date().toISOString() }]);
     const res = await fetch(`/api/plan-tasks/${taskId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageUrl: url, text: null }) });
     const comment = await res.json();
-    setComments(prev => [...prev, comment]);
+    setComments(prev => prev.map(c => c.id === tempId ? comment : c));
   };
 
   // ── Finance handlers ──
