@@ -886,6 +886,7 @@ function GanttView({ stages, tasks, openTasks, toggleOpen }: { stages: Stage[]; 
   const [focusMode, setFocusMode] = useState(false);
   const [showPast, setShowPast] = useState(false);
   const [showFuture, setShowFuture] = useState(false);
+  const [focusStageId, setFocusStageId] = useState<string | null>(null);
 
   const allDates: number[] = [];
   for (const s of stages) {
@@ -944,8 +945,11 @@ function GanttView({ stages, tasks, openTasks, toggleOpen }: { stages: Stage[]; 
   const CURRENT_COLOR = "#2563EB";
   const barColor = (t: PlanTask) => RISK_COLOR[taskRisk(t)];
 
-  // Find the "current" stage (first not-done) and "next" stage (the one right after it) for Focus mode.
-  const currentStageIdx = stages.findIndex(s => s.status !== "done");
+  // Find the "current" stage (first not-done), or use the user's manual pick, and "next" is the one right after it.
+  const autoCurrentStageIdx = stages.findIndex(s => s.status !== "done");
+  const autoCurrentStageId = autoCurrentStageIdx >= 0 ? stages[autoCurrentStageIdx].id : null;
+  const effectiveCurrentId = focusStageId ?? autoCurrentStageId;
+  const currentStageIdx = effectiveCurrentId ? stages.findIndex(s => s.id === effectiveCurrentId) : -1;
   const currentStageId = currentStageIdx >= 0 ? stages[currentStageIdx].id : null;
   const nextStageId = currentStageIdx >= 0 && currentStageIdx + 1 < stages.length ? stages[currentStageIdx + 1].id : null;
   const pastStages = currentStageIdx >= 0 ? stages.slice(0, currentStageIdx) : [];
@@ -959,10 +963,10 @@ function GanttView({ stages, tasks, openTasks, toggleOpen }: { stages: Stage[]; 
     return (
       <div key={t.id}>
         <div title={tooltip} className={`flex items-center gap-0 mb-1.5 rounded hover:bg-gray-50 ${t.parentId ? "pl-6" : ""} ${dim ? "opacity-50" : ""}`} style={{ height: 22 }}>
-          <div className="w-40 flex-shrink-0 text-sm flex items-center gap-1 truncate pr-2 cursor-pointer" onClick={() => hasChildren && toggleOpen(t.id)}>
+          <div className="w-64 flex-shrink-0 text-sm flex items-center gap-1.5 pr-3 cursor-pointer" onClick={() => hasChildren && toggleOpen(t.id)}>
             {hasChildren && <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${openTasks.has(t.id) ? "rotate-90" : ""}`} />}
             {t.isMilestone ? <span className="w-1.5 h-1.5 rotate-45 flex-shrink-0" style={{ background: "#9333EA" }} /> : <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-gray-300" />}
-            <span className={`truncate ${t.isMilestone ? "text-purple-700 font-medium" : t.parentId ? "text-gray-500" : "text-gray-700"}`}>{t.title}</span>
+            <span className={`truncate ${t.status === "done" ? "line-through text-gray-400" : t.isMilestone ? "text-purple-700 font-medium" : t.parentId ? "text-gray-500" : "text-gray-700"}`}>{t.title}</span>
           </div>
           <div className="flex-1 relative h-5">
             <div className="absolute top-2 left-0 right-0 h-1.5 bg-gray-100 rounded" />
@@ -977,9 +981,6 @@ function GanttView({ stages, tasks, openTasks, toggleOpen }: { stages: Stage[]; 
                 ? <div className="absolute top-[5px] w-2.5 h-2.5 rotate-45 -translate-x-1/2 border-2 border-white shadow" style={{ left: `${actR}%`, background: barColor(t) }} />
                 : <div className="absolute top-[5px] w-2.5 h-2.5 rounded-full -translate-x-1/2 border-2 border-white shadow" style={{ left: `${actR}%`, background: t.status === "in_progress" && !dim ? CURRENT_COLOR : barColor(t) }} />
             )}
-          </div>
-          <div className="w-20 flex-shrink-0 text-sm text-right font-medium" style={{ color: t.status === "in_progress" && !dim ? CURRENT_COLOR : RISK_COLOR[taskRisk(t)] }}>
-            {t.status === "done" ? `Done ${fmtDate(t.actualEnd)}` : taskRisk(t) === "risk" ? "Overdue" : taskRisk(t) === "warning" ? "Warning" : t.status === "in_progress" ? "In progress" : "Pending"}
           </div>
         </div>
         {hasChildren && openTasks.has(t.id) && tasks.filter(x => x.parentId === t.id).map(st => renderTaskBar(st, dim))}
@@ -1019,15 +1020,24 @@ function GanttView({ stages, tasks, openTasks, toggleOpen }: { stages: Stage[]; 
           <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rotate-45 inline-block" style={{ background: "#9333EA" }} /> Milestone</span>
           <span className="flex items-center gap-1"><span className="w-px h-3 inline-block bg-blue-500" /> Today</span>
         </div>
-        <button onClick={() => setFocusMode(f => !f)}
-          className={`text-[11px] font-semibold px-3 py-1.5 rounded-lg flex-shrink-0 ${focusMode ? "text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"}`}
-          style={focusMode ? { background: CURRENT_COLOR } : undefined}>
-          {focusMode ? "✓ Focus mode" : "Focus mode (current + next)"}
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {focusMode && (
+            <select value={effectiveCurrentId ?? ""} onChange={e => setFocusStageId(e.target.value)}
+              className="text-[11px] border border-gray-300 rounded-lg px-2 py-1.5 text-gray-600 max-w-[160px]">
+              {stages.map(s => <option key={s.id} value={s.id}>Focus: {s.name}</option>)}
+            </select>
+          )}
+          <button onClick={() => setFocusMode(f => !f)}
+            className={`text-[11px] font-semibold px-3 py-1.5 rounded-lg flex-shrink-0 ${focusMode ? "text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"}`}
+            style={focusMode ? { background: CURRENT_COLOR } : undefined}>
+            {focusMode ? "✓ Focus mode" : "Focus mode (current + next)"}
+          </button>
+        </div>
       </div>
 
-      <div className="relative">
-        <div className="absolute left-36 right-0 top-0 bottom-0 pointer-events-none z-10">
+      <div className="overflow-x-auto">
+      <div className="relative min-w-[820px]">
+        <div className="absolute left-64 right-0 top-0 bottom-0 pointer-events-none z-10">
           {weekendBands.map((b, i) => (
             <div key={i} className="absolute top-0 bottom-0 bg-gray-100/60" style={{ left: `${b.left}%`, width: `${b.width}%` }} />
           ))}
@@ -1040,7 +1050,7 @@ function GanttView({ stages, tasks, openTasks, toggleOpen }: { stages: Stage[]; 
         </div>
 
         <div className="flex mb-2">
-          <div className="w-36 flex-shrink-0" />
+          <div className="w-64 flex-shrink-0" />
           {showDailyRuler ? (
             <div className="flex-1 relative h-7 text-[11px] text-gray-400">
               {Array.from({ length: totalDays + 1 }, (_, i) => {
@@ -1096,6 +1106,7 @@ function GanttView({ stages, tasks, openTasks, toggleOpen }: { stages: Stage[]; 
             )}
           </>
         )}
+      </div>
       </div>
     </div>
   );
