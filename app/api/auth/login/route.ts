@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   const valid = await verifyPassword(password, user.passwordHash);
   if (!valid) return genericError;
 
-  const token = createSessionToken({ id: user.id, email: user.email, name: user.name, role: user.role as 'admin' | 'member' });
+  const token = createSessionToken({ id: user.id, email: user.email, name: user.name, role: user.role as 'superadmin' | 'manager' | 'member', team: user.team });
 
   const res = NextResponse.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
   res.cookies.set(SESSION_COOKIE, token, {

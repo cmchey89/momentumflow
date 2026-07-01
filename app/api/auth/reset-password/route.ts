@@ -9,7 +9,7 @@ import { getSessionFromRequest } from '../../../../lib/auth/session';
 
 export async function POST(req: NextRequest) {
   const session = getSessionFromRequest(req);
-  if (!session || session.role !== 'admin') {
+  if (!session || (session.role !== 'superadmin' && session.role !== 'manager')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 

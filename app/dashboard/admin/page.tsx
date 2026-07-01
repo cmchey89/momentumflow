@@ -1,19 +1,29 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Users, Trash2 } from "lucide-react";
+import { Plus, Users, Shield } from "lucide-react";
 
-interface Member { id: string; email: string; name: string; role: string; createdAt: string; }
+interface Member { id: string; email: string; name: string; role: string; team: string | null; createdAt: string; }
 interface ResetModal { userId: string; name: string; }
+interface Me { id: string; email: string; name: string; role: string; team: string | null; }
+
+const TEAMS = ["network", "osp", "finance", "management"] as const;
+const ROLE_COLORS: Record<string, string> = {
+  superadmin: "bg-purple-100 text-purple-700",
+  manager: "bg-blue-100 text-blue-700",
+  member: "bg-gray-100 text-gray-600",
+};
 
 export default function AdminPage() {
   const router = useRouter();
+  const [me, setMe] = useState<Me | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"admin" | "member">("member");
+  const [role, setRole] = useState<"manager" | "member">("member");
+  const [team, setTeam] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetModal, setResetModal] = useState<ResetModal | null>(null);
@@ -22,23 +32,30 @@ export default function AdminPage() {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
 
+  useEffect(() => {
+    fetch("/api/auth/me").then(r => r.ok ? r.json() : Promise.reject()).then(d => setMe(d.user)).catch(() => router.push("/dashboard"));
+  }, [router]);
+
   const load = () =>
     fetch("/api/auth/register")
-      .then(r => {
-        if (r.status === 403) { router.push("/dashboard"); return null; }
-        return r.json();
-      })
+      .then(r => { if (r.status === 403) { router.push("/dashboard"); return null; } return r.json(); })
       .then(d => d && setMembers(d));
 
   useEffect(() => { load(); }, []);
 
+  // When manager opens form, pre-fill their team
+  useEffect(() => {
+    if (me?.role === "manager" && me.team) setTeam(me.team);
+  }, [me]);
+
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!team) { setError("Please select a team."); return; }
     setLoading(true); setError(null);
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, name, password, role }),
+      body: JSON.stringify({ email, name, password, role: me?.role === "manager" ? "member" : role, team }),
     });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
@@ -46,6 +63,7 @@ export default function AdminPage() {
       setLoading(false); return;
     }
     setName(""); setEmail(""); setPassword(""); setRole("member");
+    if (me?.role !== "manager") setTeam("");
     setShowForm(false); setLoading(false);
     load();
   };
@@ -67,12 +85,16 @@ export default function AdminPage() {
     setTimeout(() => { setResetModal(null); setNewPassword(""); setResetSuccess(false); }, 1500);
   };
 
+  const isSuperAdmin = me?.role === "superadmin";
+
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Team Members</h2>
-          <p className="text-gray-500 mt-1">Manage who has access to TeamHub</p>
+          <p className="text-gray-500 mt-1">
+            {isSuperAdmin ? "Manage all teams and accounts" : `Managing ${me?.team?.toUpperCase()} team`}
+          </p>
         </div>
         <button onClick={() => setShowForm(true)}
           className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-medium">
@@ -90,11 +112,25 @@ export default function AdminPage() {
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Password (min 8 chars)" minLength={8}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <select value={role} onChange={e => setRole(e.target.value as "admin" | "member")}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-            </select>
+            {/* Team selector — locked for managers */}
+            {isSuperAdmin ? (
+              <select value={team} onChange={e => setTeam(e.target.value)} required
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">Select team…</option>
+                {TEAMS.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+              </select>
+            ) : (
+              <input value={team.charAt(0).toUpperCase() + team.slice(1)} readOnly
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500 cursor-not-allowed" />
+            )}
+            {/* Role selector — superadmin only */}
+            {isSuperAdmin && (
+              <select value={role} onChange={e => setRole(e.target.value as "manager" | "member")}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="member">Member</option>
+                <option value="manager">Manager</option>
+              </select>
+            )}
           </div>
           {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
           <div className="flex gap-2 mt-4">
@@ -122,6 +158,7 @@ export default function AdminPage() {
               <tr className="border-b border-gray-100 bg-gray-50">
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Team</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
                 <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Added</th>
                 <th className="px-6 py-3"></th>
@@ -140,7 +177,15 @@ export default function AdminPage() {
                   </td>
                   <td className="px-6 py-4 text-gray-600">{m.email}</td>
                   <td className="px-6 py-4">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.role === "admin" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"}`}>
+                    {m.team ? (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700 capitalize">{m.team}</span>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1 w-fit ${ROLE_COLORS[m.role] ?? "bg-gray-100 text-gray-600"}`}>
+                      {m.role === "superadmin" && <Shield className="w-3 h-3" />}
                       {m.role}
                     </span>
                   </td>
@@ -156,7 +201,6 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Reset password modal */}
       {resetModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">

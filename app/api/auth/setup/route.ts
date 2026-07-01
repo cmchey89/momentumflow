@@ -30,10 +30,10 @@ export async function POST(req: NextRequest) {
 
   const passwordHash = await hashPassword(password);
   const [user] = await db.insert(users).values({
-    email, name, passwordHash, role: 'admin',
+    email, name, passwordHash, role: 'superadmin',
   }).returning();
 
-  const token = createSessionToken({ id: user.id, email: user.email, name: user.name, role: 'admin' });
+  const token = createSessionToken({ id: user.id, email: user.email, name: user.name, role: 'superadmin', team: null });
   const res = NextResponse.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,

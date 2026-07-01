@@ -7,7 +7,8 @@ export interface SessionUser {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'member';
+  role: 'superadmin' | 'manager' | 'member';
+  team?: string | null;
 }
 
 function getSecret(): string {
