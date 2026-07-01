@@ -73,6 +73,7 @@ export default function ProjectDetailPage() {
   const [newStageName, setNewStageName] = useState("");
   const [addingTaskFor, setAddingTaskFor] = useState<{ stageId: string; parentId: string | null } | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [taskView, setTaskView] = useState<"list" | "timeline">("list");
 
   // finance
   const [contractors, setContractors] = useState<Contractor[]>([]);
@@ -269,6 +270,7 @@ export default function ProjectDetailPage() {
           toggleMilestone={toggleMilestone} deleteTask={deleteTask} patchTask={patchTask}
           newStageName={newStageName} setNewStageName={setNewStageName} addStage={addStage} deleteStage={deleteStage}
           addingTaskFor={addingTaskFor} setAddingTaskFor={setAddingTaskFor} newTaskTitle={newTaskTitle} setNewTaskTitle={setNewTaskTitle} addTask={addTask}
+          taskView={taskView} setTaskView={setTaskView}
         />
       )}
 
@@ -322,6 +324,7 @@ function BackgroundTab(props: {
   newStageName: string; setNewStageName: (s: string) => void; addStage: () => void; deleteStage: (id: string) => void;
   addingTaskFor: { stageId: string; parentId: string | null } | null; setAddingTaskFor: (v: { stageId: string; parentId: string | null } | null) => void;
   newTaskTitle: string; setNewTaskTitle: (s: string) => void; addTask: () => void;
+  taskView: "list" | "timeline"; setTaskView: (v: "list" | "timeline") => void;
 }) {
   const { bg, bgForm, setBgForm, editing, setEditing, save, files, addFile } = props;
   return (
@@ -405,24 +408,32 @@ function TaskTree(props: {
   newStageName: string; setNewStageName: (s: string) => void; addStage: () => void; deleteStage: (id: string) => void;
   addingTaskFor: { stageId: string; parentId: string | null } | null; setAddingTaskFor: (v: { stageId: string; parentId: string | null } | null) => void;
   newTaskTitle: string; setNewTaskTitle: (s: string) => void; addTask: () => void;
+  taskView: "list" | "timeline"; setTaskView: (v: "list" | "timeline") => void;
 }) {
   const {
     stages, tasks, comments, openTasks, toggleOpen, expandAllTasks, collapseAllTasks,
     openComments, toggleComments, remarkDrafts, setRemarkDrafts, submitRemark, attachPhoto,
     toggleMilestone, deleteTask, patchTask, newStageName, setNewStageName, addStage, deleteStage,
-    addingTaskFor, setAddingTaskFor, newTaskTitle, setNewTaskTitle, addTask,
+    addingTaskFor, setAddingTaskFor, newTaskTitle, setNewTaskTitle, addTask, taskView, setTaskView,
   } = props;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">Task breakdown</p>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3">
+          <div className="flex border border-gray-200 rounded-lg overflow-hidden text-xs">
+            <button onClick={() => setTaskView("list")} className={`px-2.5 py-1 ${taskView === "list" ? "bg-gray-100 font-medium text-gray-900" : "text-gray-400"}`}>List</button>
+            <button onClick={() => setTaskView("timeline")} className={`px-2.5 py-1 border-l border-gray-200 ${taskView === "timeline" ? "bg-gray-100 font-medium text-gray-900" : "text-gray-400"}`}>Timeline</button>
+          </div>
           <button onClick={expandAllTasks} className="text-xs text-blue-600 hover:underline">Expand all</button>
           <button onClick={collapseAllTasks} className="text-xs text-blue-600 hover:underline">Collapse all</button>
         </div>
       </div>
 
+      {taskView === "timeline" ? (
+        <GanttView stages={stages} tasks={tasks} />
+      ) : (
       <div className="border border-gray-200 rounded-xl overflow-hidden">
         <div className="grid grid-cols-[1fr_70px_70px_70px_70px_60px] gap-1 bg-gray-50 border-b border-gray-200 px-2.5 py-1.5 text-[10px] font-medium text-gray-400 uppercase">
           <span>Activity</span><span>Plan start</span><span>Plan end</span><span>Act. start</span><span>Act. end</span><span></span>
@@ -475,6 +486,106 @@ function TaskTree(props: {
           <button onClick={addStage} className="text-xs text-blue-600 flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Add stage</button>
         </div>
       </div>
+      )}
+    </div>
+  );
+}
+
+// ── Gantt / Timeline view ────────────────────────────────────────────────
+
+function GanttView({ stages, tasks }: { stages: Stage[]; tasks: PlanTask[] }) {
+  const allDates: number[] = [];
+  for (const s of stages) {
+    if (s.planStart) allDates.push(new Date(s.planStart).getTime());
+    if (s.planEnd) allDates.push(new Date(s.planEnd).getTime());
+  }
+  for (const t of tasks) {
+    for (const d of [t.planStart, t.planEnd, t.actualStart, t.actualEnd]) {
+      if (d) allDates.push(new Date(d).getTime());
+    }
+  }
+  const today = Date.now();
+
+  if (allDates.length === 0) {
+    return <p className="text-sm text-gray-400 text-center py-12 border border-gray-200 rounded-xl">No planned dates yet — add plan start/end dates in List view to see the timeline.</p>;
+  }
+
+  const rangeStart = Math.min(...allDates, today);
+  const rangeEnd = Math.max(...allDates, today);
+  const span = Math.max(rangeEnd - rangeStart, 86400000);
+
+  const pct = (d: string | null) => d ? ((new Date(d).getTime() - rangeStart) / span) * 100 : null;
+  const todayPct = ((today - rangeStart) / span) * 100;
+
+  const ticks = 5;
+  const tickDates = Array.from({ length: ticks + 1 }, (_, i) => new Date(rangeStart + (span * i) / ticks));
+
+  const isOverdue = (t: PlanTask) => t.status !== "done" && t.planEnd && new Date(t.planEnd).getTime() < today;
+  const barColor = (t: PlanTask) => isOverdue(t) ? "#E24B4A" : t.status === "done" ? "#639922" : t.status === "in_progress" ? "#BA7517" : "#9CA3AF";
+
+  return (
+    <div className="border border-gray-200 rounded-xl p-4">
+      <div className="flex gap-4 mb-3 text-[10px] text-gray-500">
+        <span className="flex items-center gap-1"><span className="w-3 h-1 rounded bg-gray-300 inline-block" /> Planned</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-1 rounded inline-block" style={{ background: "#639922" }} /> Done</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-1 rounded inline-block" style={{ background: "#BA7517" }} /> In progress</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-1 rounded inline-block" style={{ background: "#E24B4A" }} /> Overdue</span>
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rotate-45 inline-block" style={{ background: "#9333EA" }} /> Milestone</span>
+      </div>
+
+      <div className="flex mb-2">
+        <div className="w-36 flex-shrink-0" />
+        <div className="flex-1 relative h-4 text-[9px] text-gray-400">
+          {tickDates.map((d, i) => (
+            <span key={i} className="absolute -translate-x-1/2" style={{ left: `${(i / ticks) * 100}%` }}>
+              {d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {stages.map(stage => {
+        const mainTasks = tasks.filter(t => t.stageId === stage.id && !t.parentId);
+        return (
+          <div key={stage.id} className="mb-4">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STAGE_DOT[stage.status]}`} />
+              <span className="text-xs font-medium">{stage.name}</span>
+            </div>
+            {mainTasks.length === 0 ? (
+              <p className="text-[10px] text-gray-400 pl-4">No tasks yet.</p>
+            ) : mainTasks.map(t => {
+              const planL = pct(t.planStart), planR = pct(t.planEnd);
+              const actL = pct(t.actualStart) ?? planL, actR = pct(t.actualEnd) ?? (t.status === "done" ? planR : (planL !== null ? Math.min(todayPct, 100) : null));
+              return (
+                <div key={t.id} className="flex items-center gap-0 mb-1.5" style={{ height: 20 }}>
+                  <div className="w-36 flex-shrink-0 text-[10px] flex items-center gap-1 truncate pr-2">
+                    {t.isMilestone ? <span className="w-1.5 h-1.5 rotate-45 flex-shrink-0" style={{ background: "#9333EA" }} /> : <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-gray-300" />}
+                    <span className={`truncate ${t.isMilestone ? "text-purple-700" : "text-gray-600"}`}>{t.title}</span>
+                  </div>
+                  <div className="flex-1 relative h-5">
+                    <div className="absolute top-2 left-0 right-0 h-1 bg-gray-100 rounded" />
+                    {planL !== null && planR !== null && (
+                      <div className="absolute top-2 h-1 rounded bg-gray-300" style={{ left: `${planL}%`, width: `${Math.max(planR - planL, 0.5)}%` }} />
+                    )}
+                    {actL !== null && actR !== null && (
+                      <div className="absolute top-2 h-1 rounded" style={{ left: `${actL}%`, width: `${Math.max(actR - actL, 0.5)}%`, background: barColor(t) }} />
+                    )}
+                    {actR !== null && (
+                      t.isMilestone
+                        ? <div className="absolute top-[6px] w-2 h-2 rotate-45 -translate-x-1/2 border border-white" style={{ left: `${actR}%`, background: barColor(t) }} />
+                        : <div className="absolute top-[6px] w-2 h-2 rounded-full -translate-x-1/2 border border-white" style={{ left: `${actR}%`, background: barColor(t) }} />
+                    )}
+                  </div>
+                  <div className="w-14 flex-shrink-0 text-[10px] text-right" style={{ color: isOverdue(t) ? "#E24B4A" : t.status === "done" ? "#3B6D11" : "#9CA3AF" }}>
+                    {isOverdue(t) ? "Overdue" : t.status === "done" ? `Done ${fmtDate(t.actualEnd)}` : t.status === "in_progress" ? "In progress" : "Pending"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }

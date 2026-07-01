@@ -73,6 +73,14 @@ export default function LoginPage() {
           </button>
         </form>
 
+        {!setupAvailable && (
+          <Link href="/signup"
+            className="mt-4 w-full flex items-center justify-center border border-gray-300 text-gray-700 py-2.5 rounded-lg font-medium text-sm hover:bg-gray-50 transition-colors"
+          >
+            Sign Up
+          </Link>
+        )}
+
         {setupAvailable && (
           <p className="text-center text-xs text-gray-400 mt-6">
             First time?{" "}
