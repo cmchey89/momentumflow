@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, Fragment } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -453,7 +453,7 @@ export default function ProjectDetailPage() {
   const contractorTotal = contractorClaims.reduce((s, c) => s + c.amount, 0);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
+    <div className="p-8 max-w-[1920px] mx-auto">
       <Link href="/dashboard/projects" className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4">
         <ArrowLeft className="w-3.5 h-3.5" /> Back to Projects
       </Link>
@@ -886,7 +886,7 @@ function GanttView({ stages, tasks, openTasks, toggleOpen }: { stages: Stage[]; 
   const [focusMode, setFocusMode] = useState(false);
   const [showPast, setShowPast] = useState(false);
   const [showFuture, setShowFuture] = useState(false);
-  const [focusStageId, setFocusStageId] = useState<string | null>(null);
+  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
 
   const allDates: number[] = [];
   for (const s of stages) {
@@ -916,7 +916,6 @@ function GanttView({ stages, tasks, openTasks, toggleOpen }: { stages: Stage[]; 
   const totalDays = Math.round(span / 86400000);
   const showDailyRuler = totalDays <= 90; // beyond ~3 months, per-day ticks would be too dense to read
 
-  // Weekend bands and gridlines, only meaningful at daily granularity.
   const weekendBands: { left: number; width: number }[] = [];
   if (showDailyRuler) {
     for (let i = 0; i <= totalDays; i++) {
@@ -945,72 +944,146 @@ function GanttView({ stages, tasks, openTasks, toggleOpen }: { stages: Stage[]; 
   const CURRENT_COLOR = "#2563EB";
   const barColor = (t: PlanTask) => RISK_COLOR[taskRisk(t)];
 
-  // Find the "current" stage (first not-done), or use the user's manual pick, and "next" is the one right after it.
-  const autoCurrentStageIdx = stages.findIndex(s => s.status !== "done");
-  const autoCurrentStageId = autoCurrentStageIdx >= 0 ? stages[autoCurrentStageIdx].id : null;
-  const effectiveCurrentId = focusStageId ?? autoCurrentStageId;
-  const currentStageIdx = effectiveCurrentId ? stages.findIndex(s => s.id === effectiveCurrentId) : -1;
-  const currentStageId = currentStageIdx >= 0 ? stages[currentStageIdx].id : null;
-  const nextStageId = currentStageIdx >= 0 && currentStageIdx + 1 < stages.length ? stages[currentStageIdx + 1].id : null;
+  // Flatten main tasks in stage order, so Focus mode can anchor on a specific task, not just a stage.
+  const flatMainTasks: { task: PlanTask; stage: Stage }[] = [];
+  stages.forEach(s => tasks.filter(t => t.stageId === s.id && !t.parentId).forEach(t => flatMainTasks.push({ task: t, stage: s })));
+  const autoCurrentIdx = flatMainTasks.findIndex(x => x.task.status !== "done");
+  const autoCurrentTaskId = autoCurrentIdx >= 0 ? flatMainTasks[autoCurrentIdx].task.id : (flatMainTasks.length ? flatMainTasks[flatMainTasks.length - 1].task.id : null);
+  const effectiveCurrentTaskId = focusTaskId ?? autoCurrentTaskId;
+  const currentIdx = flatMainTasks.findIndex(x => x.task.id === effectiveCurrentTaskId);
+  const currentEntry = currentIdx >= 0 ? flatMainTasks[currentIdx] : null;
+  const nextEntry = currentIdx >= 0 && currentIdx + 1 < flatMainTasks.length ? flatMainTasks[currentIdx + 1] : null;
+  const currentStageIdx = currentEntry ? stages.findIndex(s => s.id === currentEntry.stage.id) : -1;
+  const nextStageIdx = nextEntry ? stages.findIndex(s => s.id === nextEntry.stage.id) : currentStageIdx;
   const pastStages = currentStageIdx >= 0 ? stages.slice(0, currentStageIdx) : [];
-  const futureStages = currentStageIdx >= 0 ? stages.slice(currentStageIdx + 2) : [];
+  const futureStages = nextStageIdx >= 0 ? stages.slice(nextStageIdx + 1) : [];
+  const activeStageIds = [currentEntry?.stage.id, nextEntry?.stage.id].filter((v, i, a): v is string => !!v && a.indexOf(v) === i);
 
-  const renderTaskBar = (t: PlanTask, dim: boolean) => {
+  const renderDecorations = () => (
+    <>
+      {weekendBands.map((b, i) => <div key={`w${i}`} className="absolute top-0 bottom-0 bg-gray-100/60" style={{ left: `${b.left}%`, width: `${b.width}%` }} />)}
+      {gridlinePcts.map((p, i) => <div key={`g${i}`} className="absolute top-0 bottom-0 w-px bg-gray-100" style={{ left: `${p}%` }} />)}
+      {todayPct >= 0 && todayPct <= 100 && <div className="absolute top-0 bottom-0 w-px bg-blue-500" style={{ left: `${todayPct}%` }} />}
+    </>
+  );
+
+  // Label pane and bar pane are two separate scroll contexts, so every visual row is built as a
+  // {label, bar} pair pushed into one shared array — this keeps the two panes in lockstep without
+  // relying on position:sticky inside a horizontally-scrolling grid (which doesn't hold a full-width
+  // column pinned once the grid's own track starts scrolling).
+  type Row = { key: string; label: React.ReactNode; bar: React.ReactNode };
+  const rows: Row[] = [];
+
+  const pushTaskRows = (t: PlanTask, opts: { dim?: boolean; badge?: "current" | "next" }) => {
     const planL = pct(t.planStart), planR = pct(t.planEnd);
     const actL = pct(t.actualStart) ?? planL, actR = pct(t.actualEnd) ?? (t.status === "done" ? planR : (planL !== null ? Math.min(todayPct, 100) : null));
     const hasChildren = !t.parentId && tasks.some(x => x.parentId === t.id);
     const tooltip = `${t.title}\nPlan: ${fmtDate(t.planStart)} – ${fmtDate(t.planEnd)}\nActual: ${fmtDate(t.actualStart)} – ${fmtDate(t.actualEnd)}`;
-    return (
-      <div key={t.id}>
-        <div title={tooltip} className={`flex items-center gap-0 mb-1.5 rounded hover:bg-gray-50 ${t.parentId ? "pl-6" : ""} ${dim ? "opacity-50" : ""}`} style={{ height: 22 }}>
-          <div className="w-64 flex-shrink-0 text-sm flex items-center gap-1.5 pr-3 cursor-pointer" onClick={() => hasChildren && toggleOpen(t.id)}>
-            {hasChildren && <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${openTasks.has(t.id) ? "rotate-90" : ""}`} />}
-            {t.isMilestone ? <span className="w-1.5 h-1.5 rotate-45 flex-shrink-0" style={{ background: "#9333EA" }} /> : <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-gray-300" />}
-            <span className={`truncate ${t.status === "done" ? "line-through text-gray-400" : t.isMilestone ? "text-purple-700 font-medium" : t.parentId ? "text-gray-500" : "text-gray-700"}`}>{t.title}</span>
-          </div>
-          <div className="flex-1 relative h-5">
-            <div className="absolute top-2 left-0 right-0 h-1.5 bg-gray-100 rounded" />
-            {planL !== null && planR !== null && (
-              <div className="absolute top-2 h-1.5 rounded bg-gray-300" style={{ left: `${planL}%`, width: `${Math.max(planR - planL, 0.5)}%` }} />
-            )}
-            {actL !== null && actR !== null && (
-              <div className="absolute top-2 h-1.5 rounded" style={{ left: `${actL}%`, width: `${Math.max(actR - actL, 0.5)}%`, background: t.status === "in_progress" && !dim ? CURRENT_COLOR : barColor(t) }} />
-            )}
-            {actR !== null && (
-              t.isMilestone
-                ? <div className="absolute top-[5px] w-2.5 h-2.5 rotate-45 -translate-x-1/2 border-2 border-white shadow" style={{ left: `${actR}%`, background: barColor(t) }} />
-                : <div className="absolute top-[5px] w-2.5 h-2.5 rounded-full -translate-x-1/2 border-2 border-white shadow" style={{ left: `${actR}%`, background: t.status === "in_progress" && !dim ? CURRENT_COLOR : barColor(t) }} />
-            )}
-          </div>
+    const dim = !!opts.dim;
+    rows.push({
+      key: t.id,
+      label: (
+        <div className={`h-6 flex items-center gap-1.5 pr-4 text-sm cursor-pointer whitespace-nowrap ${t.parentId ? "pl-6" : ""} ${dim ? "opacity-50" : ""}`} onClick={() => hasChildren && toggleOpen(t.id)}>
+          {hasChildren && <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${openTasks.has(t.id) ? "rotate-90" : ""}`} />}
+          {t.isMilestone ? <span className="w-1.5 h-1.5 rotate-45 flex-shrink-0" style={{ background: "#9333EA" }} /> : <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-gray-300" />}
+          <span className={t.status === "done" ? "line-through text-gray-400" : t.isMilestone ? "text-purple-700 font-medium" : t.parentId ? "text-gray-500" : "text-gray-700"}>{t.title}</span>
+          {opts.badge === "current" && <span className="text-[10px] font-bold text-white px-1.5 py-0.5 rounded-full animate-pulse flex-shrink-0" style={{ background: CURRENT_COLOR }}>● CURRENT</span>}
+          {opts.badge === "next" && <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full flex-shrink-0">NEXT UP</span>}
         </div>
-        {hasChildren && openTasks.has(t.id) && tasks.filter(x => x.parentId === t.id).map(st => renderTaskBar(st, dim))}
-      </div>
-    );
+      ),
+      bar: (
+        <div title={tooltip} className={`relative h-6 rounded hover:bg-gray-50 ${dim ? "opacity-50" : ""}`}>
+          {renderDecorations()}
+          <div className="absolute top-2 left-0 right-0 h-1.5 bg-gray-100 rounded" />
+          {planL !== null && planR !== null && (
+            <div className="absolute top-2 h-1.5 rounded bg-gray-300" style={{ left: `${planL}%`, width: `${Math.max(planR - planL, 0.5)}%` }} />
+          )}
+          {actL !== null && actR !== null && (
+            <div className="absolute top-2 h-1.5 rounded" style={{ left: `${actL}%`, width: `${Math.max(actR - actL, 0.5)}%`, background: t.status === "in_progress" && !dim ? CURRENT_COLOR : barColor(t) }} />
+          )}
+          {actR !== null && (
+            t.isMilestone
+              ? <div className="absolute top-[5px] w-2.5 h-2.5 rotate-45 -translate-x-1/2 border-2 border-white shadow" style={{ left: `${actR}%`, background: barColor(t) }} />
+              : <div className="absolute top-[5px] w-2.5 h-2.5 rounded-full -translate-x-1/2 border-2 border-white shadow" style={{ left: `${actR}%`, background: t.status === "in_progress" && !dim ? CURRENT_COLOR : barColor(t) }} />
+          )}
+        </div>
+      ),
+    });
+    if (hasChildren && openTasks.has(t.id)) {
+      tasks.filter(x => x.parentId === t.id).forEach(st => pushTaskRows(st, { dim }));
+    }
   };
 
-  const renderStage = (stage: Stage, opts: { badge?: "current" | "next"; dim?: boolean }) => {
+  const pushStageRows = (stage: Stage, opts: { forceOpen?: boolean; dim?: boolean; currentTaskId?: string; nextTaskId?: string }) => {
     const mainTasks = tasks.filter(t => t.stageId === stage.id && !t.parentId);
-    const isOpen = opts.badge ? true : openTasks.has(stage.id);
-    return (
-      <div key={stage.id} className={`mb-3 rounded-lg ${opts.badge === "current" ? "border-2 p-2.5 -mx-2.5" : opts.badge === "next" ? "border p-2 -mx-2" : ""}`}
-        style={opts.badge === "current" ? { borderColor: CURRENT_COLOR, background: "#EFF6FF" } : opts.badge === "next" ? { borderColor: "#C4B5FD", background: "#FAF5FF" } : undefined}>
-        <div className="flex items-center gap-1.5 mb-1.5 cursor-pointer rounded hover:bg-gray-50" onClick={() => !opts.badge && toggleOpen(stage.id)}>
-          {!opts.badge && <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`} />}
+    const isOpen = opts.forceOpen || openTasks.has(stage.id);
+    rows.push({
+      key: `stage-${stage.id}`,
+      label: (
+        <div className="cursor-pointer rounded hover:bg-gray-50 flex items-center gap-1.5 py-1 whitespace-nowrap" onClick={() => toggleOpen(stage.id)}>
+          <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`} />
           <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${STAGE_DOT[stage.status]}`} />
           <span className="text-sm font-semibold">{stage.name}</span>
-          {opts.badge === "current" && <span className="text-[11px] font-bold text-white px-2 py-0.5 rounded-full animate-pulse" style={{ background: CURRENT_COLOR }}>● CURRENT</span>}
-          {opts.badge === "next" && <span className="text-[11px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">NEXT UP</span>}
         </div>
-        {isOpen && (mainTasks.length === 0
-          ? <p className="text-sm text-gray-400 pl-4">No tasks yet.</p>
-          : mainTasks.map(t => renderTaskBar(t, !!opts.dim)))}
-      </div>
-    );
+      ),
+      bar: <div className="flex items-center gap-1.5 py-1 opacity-0 pointer-events-none" aria-hidden><ChevronRight className="w-3 h-3 flex-shrink-0" /><span className="text-sm">.</span></div>,
+    });
+    if (!isOpen) return;
+    if (mainTasks.length === 0) {
+      rows.push({
+        key: `empty-${stage.id}`,
+        label: <p className="text-sm text-gray-400">No tasks yet.</p>,
+        bar: <p className="text-sm opacity-0" aria-hidden>No tasks yet.</p>,
+      });
+      return;
+    }
+    mainTasks.forEach(t => pushTaskRows(t, {
+      dim: opts.dim,
+      badge: t.id === opts.currentTaskId ? "current" : t.id === opts.nextTaskId ? "next" : undefined,
+    }));
   };
+
+  const pushToggleRow = (key: string, expanded: boolean, onToggle: () => void, text: string) => {
+    rows.push({
+      key,
+      label: (
+        <button onClick={onToggle} className="w-full text-left text-sm text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-100 whitespace-nowrap">
+          {expanded ? "▾" : "▸"} {text}
+        </button>
+      ),
+      bar: <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2" aria-hidden>&nbsp;</div>,
+    });
+  };
+
+  if (!focusMode) {
+    stages.forEach(stage => pushStageRows(stage, {}));
+  } else {
+    if (pastStages.length > 0) pushToggleRow("past-toggle", showPast, () => setShowPast(v => !v), `✓ ${pastStages.length} stage${pastStages.length > 1 ? "s" : ""} completed`);
+    if (showPast) pastStages.forEach(stage => pushStageRows(stage, { forceOpen: true, dim: true }));
+
+    activeStageIds.forEach(id => pushStageRows(stages.find(s => s.id === id)!, {
+      forceOpen: true,
+      currentTaskId: currentEntry?.task.id,
+      nextTaskId: nextEntry?.task.id,
+    }));
+
+    if (futureStages.length > 0) pushToggleRow("future-toggle", showFuture, () => setShowFuture(v => !v), `${futureStages.length} more stage${futureStages.length > 1 ? "s" : ""} upcoming`);
+    if (showFuture) futureStages.forEach(stage => pushStageRows(stage, { forceOpen: true, dim: true }));
+
+    if (!currentEntry) {
+      rows.push({
+        key: "all-done",
+        label: <p className="text-sm text-center py-6 font-medium" style={{ color: RISK_COLOR.ontrack }}>🎉 All tasks completed</p>,
+        bar: <p className="text-sm text-center py-6 opacity-0" aria-hidden>placeholder</p>,
+      });
+    }
+  }
+
+  const focusOptions: { taskId: string; stageName: string; title: string }[] = flatMainTasks.map(x => ({ taskId: x.task.id, stageName: x.stage.name, title: x.task.title }));
 
   return (
     <div className="border border-gray-200 rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex gap-4 text-sm text-gray-500 flex-wrap">
           <span className="flex items-center gap-1"><span className="w-3 h-1 rounded bg-gray-300 inline-block" /> Planned</span>
           <span className="flex items-center gap-1"><span className="w-3 h-1 rounded inline-block" style={{ background: RISK_COLOR.ontrack }} /> On track</span>
@@ -1022,9 +1095,9 @@ function GanttView({ stages, tasks, openTasks, toggleOpen }: { stages: Stage[]; 
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {focusMode && (
-            <select value={effectiveCurrentId ?? ""} onChange={e => setFocusStageId(e.target.value)}
-              className="text-[11px] border border-gray-300 rounded-lg px-2 py-1.5 text-gray-600 max-w-[160px]">
-              {stages.map(s => <option key={s.id} value={s.id}>Focus: {s.name}</option>)}
+            <select value={effectiveCurrentTaskId ?? ""} onChange={e => setFocusTaskId(e.target.value)}
+              className="text-[11px] border border-gray-300 rounded-lg px-2 py-1.5 text-gray-600 max-w-[220px]">
+              {focusOptions.map(o => <option key={o.taskId} value={o.taskId}>Focus: {o.stageName} – {o.title}</option>)}
             </select>
           )}
           <button onClick={() => setFocusMode(f => !f)}
@@ -1035,78 +1108,37 @@ function GanttView({ stages, tasks, openTasks, toggleOpen }: { stages: Stage[]; 
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-      <div className="relative min-w-[820px]">
-        <div className="absolute left-64 right-0 top-0 bottom-0 pointer-events-none z-10">
-          {weekendBands.map((b, i) => (
-            <div key={i} className="absolute top-0 bottom-0 bg-gray-100/60" style={{ left: `${b.left}%`, width: `${b.width}%` }} />
-          ))}
-          {gridlinePcts.map((p, i) => (
-            <div key={i} className="absolute top-0 bottom-0 w-px bg-gray-100" style={{ left: `${p}%` }} />
-          ))}
-          {todayPct >= 0 && todayPct <= 100 && (
-            <div className="absolute top-0 bottom-0 w-px bg-blue-500" style={{ left: `${todayPct}%` }} />
-          )}
+      <div className="flex">
+        <div className="flex-shrink-0 bg-white pr-2 flex flex-col gap-y-1.5" style={{ width: "max-content" }}>
+          <div className={showDailyRuler ? "h-7" : "h-4"} />
+          {rows.map(r => <Fragment key={r.key}>{r.label}</Fragment>)}
         </div>
-
-        <div className="flex mb-2">
-          <div className="w-64 flex-shrink-0" />
-          {showDailyRuler ? (
-            <div className="flex-1 relative h-7 text-[11px] text-gray-400">
-              {Array.from({ length: totalDays + 1 }, (_, i) => {
-                const d = new Date(rangeStart + i * 86400000);
-                const isMajor = i % 5 === 0 || i % 5 === 4 || i === totalDays;
-                const leftPct = (i / totalDays) * 100;
-                return (
-                  <div key={i} className="absolute top-0" style={{ left: `${leftPct}%` }}>
-                    <div className={isMajor ? "w-px h-2 bg-gray-400" : "w-px h-1 bg-gray-200"} />
-                    {isMajor && (
-                      <span className="absolute top-2.5 -translate-x-1/2 whitespace-nowrap text-gray-500 font-medium">
-                        {d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="flex-1 relative h-4 text-[11px] text-gray-400">
-              {tickDates.map((d, i) => (
-                <span key={i} className="absolute -translate-x-1/2" style={{ left: `${(i / ticks) * 100}%` }}>
-                  {d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                </span>
-              ))}
-            </div>
-          )}
+        <div className="overflow-x-auto flex-1 min-w-0">
+          <div className="flex flex-col gap-y-1.5" style={{ minWidth: 560 }}>
+            {showDailyRuler ? (
+              <div className="relative h-7 text-[11px] text-gray-400">
+                {Array.from({ length: totalDays + 1 }, (_, i) => {
+                  const d = new Date(rangeStart + i * 86400000);
+                  const isMajor = i % 5 === 0 || i % 5 === 4 || i === totalDays;
+                  const leftPct = (i / totalDays) * 100;
+                  return (
+                    <div key={i} className="absolute top-0" style={{ left: `${leftPct}%` }}>
+                      <div className={isMajor ? "w-px h-2 bg-gray-400" : "w-px h-1 bg-gray-200"} />
+                      {isMajor && <span className="absolute top-2.5 -translate-x-1/2 whitespace-nowrap text-gray-500 font-medium">{d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="relative h-4 text-[11px] text-gray-400">
+                {tickDates.map((d, i) => (
+                  <span key={i} className="absolute -translate-x-1/2" style={{ left: `${(i / ticks) * 100}%` }}>{d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+                ))}
+              </div>
+            )}
+            {rows.map(r => <Fragment key={r.key}>{r.bar}</Fragment>)}
+          </div>
         </div>
-
-        {!focusMode && stages.map(stage => renderStage(stage, {}))}
-
-        {focusMode && (
-          <>
-            {pastStages.length > 0 && (
-              <button onClick={() => setShowPast(v => !v)} className="w-full text-left text-sm text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-3 hover:bg-gray-100">
-                {showPast ? "▾" : "▸"} ✓ {pastStages.length} stage{pastStages.length > 1 ? "s" : ""} completed
-              </button>
-            )}
-            {showPast && pastStages.map(stage => renderStage(stage, { dim: true }))}
-
-            {currentStageId && renderStage(stages.find(s => s.id === currentStageId)!, { badge: "current" })}
-            {nextStageId && renderStage(stages.find(s => s.id === nextStageId)!, { badge: "next", dim: true })}
-
-            {futureStages.length > 0 && (
-              <button onClick={() => setShowFuture(v => !v)} className="w-full text-left text-sm text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-3 hover:bg-gray-100">
-                {showFuture ? "▾" : "▸"} {futureStages.length} more stage{futureStages.length > 1 ? "s" : ""} upcoming
-              </button>
-            )}
-            {showFuture && futureStages.map(stage => renderStage(stage, { dim: true }))}
-
-            {!currentStageId && stages.every(s => s.status === "done") && (
-              <p className="text-sm text-center py-6 font-medium" style={{ color: RISK_COLOR.ontrack }}>🎉 All stages completed</p>
-            )}
-          </>
-        )}
-      </div>
       </div>
     </div>
   );
