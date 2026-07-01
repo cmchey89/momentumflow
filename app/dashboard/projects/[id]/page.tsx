@@ -83,7 +83,7 @@ function longPressHandlers(onActivate: () => void, delay = 1000) {
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [tab, setTab] = useState<"background" | "stages" | "finance">("background");
+  const [tab, setTab] = useState<"background" | "plan" | "stages" | "finance">("background");
   const [project, setProject] = useState<Project | null>(null);
 
   // background
@@ -402,7 +402,7 @@ export default function ProjectDetailPage() {
       </div>
 
       <div className="flex border-b border-gray-200 mb-6">
-        {(["background", "stages", "finance"] as const).map(t => (
+        {(["background", "plan", "stages", "finance"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm capitalize -mb-px border-b-2 ${tab === t ? "border-blue-600 text-blue-600 font-medium" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
             {t}
@@ -414,6 +414,14 @@ export default function ProjectDetailPage() {
         <BackgroundTab
           bg={bg} bgForm={bgForm} setBgForm={setBgForm} editing={editingBg} setEditing={setEditingBg} save={saveBg}
           files={files} addFile={addFile}
+          stages={stages} tasks={tasks}
+          openTasks={openTasks} toggleOpen={toggleOpen}
+          taskView={taskView} setTaskView={setTaskView}
+        />
+      )}
+
+      {tab === "plan" && (
+        <PlanTab
           stages={stages} tasks={tasks} comments={comments}
           openTasks={openTasks} toggleOpen={toggleOpen} expandAllTasks={expandAllTasks} collapseAllTasks={collapseAllTasks}
           openComments={openComments} toggleComments={toggleComments}
@@ -536,17 +544,11 @@ function EditableName({ value, onSave, className }: { value: string; onSave: (v:
 function BackgroundTab(props: {
   bg: Background | null; bgForm: Background; setBgForm: (b: Background) => void; editing: boolean; setEditing: (b: boolean) => void; save: () => void;
   files: ProjFile[]; addFile: () => void;
-  stages: Stage[]; tasks: PlanTask[]; comments: Comment[];
-  openTasks: Set<string>; toggleOpen: (id: string) => void; expandAllTasks: () => void; collapseAllTasks: () => void;
-  openComments: Set<string>; toggleComments: (id: string) => void;
-  submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
-  toggleMilestone: (t: PlanTask) => void; deleteTask: (id: string) => void; patchTask: (id: string, v: Partial<PlanTask>) => void; patchStage: (id: string, v: Partial<Stage>) => void;
-  addStage: (name: string) => void; deleteStage: (id: string) => void;
-  addingTaskFor: { stageId: string; parentId: string | null } | null; setAddingTaskFor: (v: { stageId: string; parentId: string | null } | null) => void;
-  addTask: (stageId: string, parentId: string | null, title: string) => void;
+  stages: Stage[]; tasks: PlanTask[];
+  openTasks: Set<string>; toggleOpen: (id: string) => void;
   taskView: "list" | "timeline"; setTaskView: (v: "list" | "timeline") => void;
-} & DragCtl) {
-  const { bg, bgForm, setBgForm, editing, setEditing, save, files, addFile } = props;
+}) {
+  const { bg, bgForm, setBgForm, editing, setEditing, save, files, addFile, stages, tasks, openTasks, toggleOpen, taskView, setTaskView } = props;
   return (
     <div>
       <div className="grid grid-cols-2 gap-4 mb-6">
@@ -602,8 +604,108 @@ function BackgroundTab(props: {
       </div>
 
       <div className="border-t border-gray-100 pt-5">
-        <TaskTree {...props} />
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Task breakdown (read-only — edit in the Plan tab)</p>
+          <div className="flex border border-gray-200 rounded-lg overflow-hidden text-xs">
+            <button onClick={() => setTaskView("list")} className={`px-2.5 py-1 ${taskView === "list" ? "bg-gray-100 font-medium text-gray-900" : "text-gray-400"}`}>List</button>
+            <button onClick={() => setTaskView("timeline")} className={`px-2.5 py-1 border-l border-gray-200 ${taskView === "timeline" ? "bg-gray-100 font-medium text-gray-900" : "text-gray-400"}`}>Timeline</button>
+          </div>
+        </div>
+        {taskView === "timeline" ? (
+          <GanttView stages={stages} tasks={tasks} />
+        ) : (
+          <ReadOnlyTaskTree stages={stages} tasks={tasks} openTasks={openTasks} toggleOpen={toggleOpen} />
+        )}
       </div>
+    </div>
+  );
+}
+
+function ReadOnlyTaskTree({ stages, tasks, openTasks, toggleOpen }: {
+  stages: Stage[]; tasks: PlanTask[]; openTasks: Set<string>; toggleOpen: (id: string) => void;
+}) {
+  if (stages.length === 0) return <p className="text-sm text-gray-400 text-center py-10 border border-gray-200 rounded-xl">No stages yet — add them in the Plan tab.</p>;
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <div className="grid grid-cols-[1fr_70px_70px_70px_70px] gap-1 bg-gray-50 border-b border-gray-200 px-2.5 py-1.5 text-[10px] font-medium text-gray-400 uppercase">
+        <span>Activity</span><span>Plan start</span><span>Plan end</span><span>Act. start</span><span>Act. end</span>
+      </div>
+      {stages.map(stage => {
+        const mainTasks = tasks.filter(t => t.stageId === stage.id && !t.parentId);
+        return (
+          <div key={stage.id}>
+            <div className="grid grid-cols-[1fr_70px_70px_70px_70px] gap-1 items-center px-2.5 py-2 bg-gray-50 border-b border-gray-200 cursor-pointer" onClick={() => toggleOpen(stage.id)}>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${openTasks.has(stage.id) ? "rotate-90" : ""}`} />
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STAGE_DOT[stage.status]}`} />
+                <b className="text-xs truncate">{stage.name}</b>
+              </div>
+              <span className="text-xs text-gray-400">{fmtDate(stage.planStart)}</span>
+              <span className="text-xs text-gray-400">{fmtDate(stage.planEnd)}</span>
+              <span className="text-xs text-blue-500">{fmtDate(stage.actualStart)}</span>
+              <span className="text-xs text-blue-500">{fmtDate(stage.actualEnd)}</span>
+            </div>
+            {openTasks.has(stage.id) && mainTasks.map(mt => (
+              <ReadOnlyTaskRow key={mt.id} task={mt} subTasks={tasks.filter(t => t.parentId === mt.id)} openTasks={openTasks} toggleOpen={toggleOpen} />
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReadOnlyTaskRow({ task, subTasks, openTasks, toggleOpen }: {
+  task: PlanTask; subTasks: PlanTask[]; openTasks: Set<string>; toggleOpen: (id: string) => void;
+}) {
+  const hasChildren = subTasks.length > 0;
+  return (
+    <>
+      <div className="grid grid-cols-[1fr_70px_70px_70px_70px] gap-1 items-center pl-5 pr-2.5 py-1.5 bg-white border-b border-gray-100 cursor-pointer hover:bg-gray-50" onClick={() => hasChildren && toggleOpen(task.id)}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          {hasChildren ? <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${openTasks.has(task.id) ? "rotate-90" : ""}`} /> : <span className="w-3 text-center text-gray-300 text-xs">—</span>}
+          <span className={`w-1.5 h-1.5 rotate-45 flex-shrink-0 ${task.isMilestone ? "bg-purple-600" : "bg-gray-400"}`} />
+          <span className="text-xs truncate">{task.title}</span>
+          {task.isMilestone && <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full flex items-center gap-0.5 flex-shrink-0"><Flag className="w-2 h-2" /></span>}
+        </div>
+        <span className="text-xs text-gray-400">{fmtDate(task.planStart)}</span>
+        <span className="text-xs text-gray-400">{fmtDate(task.planEnd)}</span>
+        <span className="text-xs text-blue-500">{fmtDate(task.actualStart)}</span>
+        <span className="text-xs text-blue-500">{fmtDate(task.actualEnd)}</span>
+      </div>
+      {openTasks.has(task.id) && subTasks.map(st => (
+        <div key={st.id} className="grid grid-cols-[1fr_70px_70px_70px_70px] gap-1 items-center pl-9 pr-2.5 py-1.5 bg-white border-b border-gray-100">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="w-1.5 h-[1.5px] bg-gray-300 flex-shrink-0" />
+            <span className="text-xs text-gray-500 truncate">{st.title}</span>
+          </div>
+          <span className="text-xs text-gray-400">{fmtDate(st.planStart)}</span>
+          <span className="text-xs text-gray-400">{fmtDate(st.planEnd)}</span>
+          <span className="text-xs text-blue-500">{fmtDate(st.actualStart)}</span>
+          <span className="text-xs text-blue-500">{fmtDate(st.actualEnd)}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+// ── Plan Tab (full task-breakdown editing: add/rename/reorder/delete/drag) ──
+
+function PlanTab(props: {
+  stages: Stage[]; tasks: PlanTask[]; comments: Comment[];
+  openTasks: Set<string>; toggleOpen: (id: string) => void; expandAllTasks: () => void; collapseAllTasks: () => void;
+  openComments: Set<string>; toggleComments: (id: string) => void;
+  submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
+  toggleMilestone: (t: PlanTask) => void; deleteTask: (id: string) => void; patchTask: (id: string, v: Partial<PlanTask>) => void; patchStage: (id: string, v: Partial<Stage>) => void;
+  addStage: (name: string) => void; deleteStage: (id: string) => void;
+  addingTaskFor: { stageId: string; parentId: string | null } | null; setAddingTaskFor: (v: { stageId: string; parentId: string | null } | null) => void;
+  addTask: (stageId: string, parentId: string | null, title: string) => void;
+  taskView: "list" | "timeline"; setTaskView: (v: "list" | "timeline") => void;
+} & DragCtl) {
+  return (
+    <div>
+      <p className="text-xs text-gray-400 mb-3">Build and adjust the stage / main task / sub task structure and planned dates here. Background shows a read-only summary of this; Stages is for logging actual progress and remarks.</p>
+      <TaskTree {...props} />
     </div>
   );
 }
