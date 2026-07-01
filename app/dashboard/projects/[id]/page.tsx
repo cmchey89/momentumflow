@@ -47,6 +47,64 @@ type DragCtl = {
   startDrag: (kind: "stage" | "task", id: string) => void;
 };
 
+interface BulkSubTask { title: string; planStart: string | null; planEnd: string | null }
+interface BulkTask { title: string; planStart: string | null; planEnd: string | null; subTasks: BulkSubTask[] }
+interface BulkStage { name: string; tasks: BulkTask[] }
+
+const MONTH_LOOKUP: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+function parseFlexibleDate(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})[-\s](\w{3,})[-\s](\d{2,4})$/);
+  if (m) {
+    const day = parseInt(m[1], 10);
+    const mon = MONTH_LOOKUP[m[2].slice(0, 3).toLowerCase()];
+    let year = parseInt(m[3], 10);
+    if (year < 100) year += 2000;
+    if (mon !== undefined && !isNaN(day)) return new Date(Date.UTC(year, mon, day)).toISOString().slice(0, 10);
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+function parseBulkText(text: string): { stages: BulkStage[]; errors: string[] } {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const stages: BulkStage[] = [];
+  let currentStage: BulkStage | null = null;
+  let currentTask: BulkTask | null = null;
+  const errors: string[] = [];
+
+  lines.forEach((line, i) => {
+    const delim = line.includes("\t") ? "\t" : "|";
+    const parts = line.split(delim).map(p => p.trim());
+    const level = parseInt(parts[0], 10);
+    const title = parts[1] || "";
+    const planStart = parseFlexibleDate(parts[2] || "");
+    const planEnd = parseFlexibleDate(parts[3] || "");
+
+    if (![1, 2, 3].includes(level) || !title) {
+      errors.push(`Line ${i + 1}: couldn't read "${line}" — expected "1/2/3, title[, plan start[, plan end]]"`);
+      return;
+    }
+    if (level === 1) {
+      currentStage = { name: title, tasks: [] };
+      stages.push(currentStage);
+      currentTask = null;
+    } else if (level === 2) {
+      if (!currentStage) { errors.push(`Line ${i + 1}: main task "${title}" has no stage above it`); return; }
+      currentTask = { title, planStart, planEnd, subTasks: [] };
+      currentStage.tasks.push(currentTask);
+    } else {
+      if (!currentTask) { errors.push(`Line ${i + 1}: sub task "${title}" has no main task above it`); return; }
+      currentTask.subTasks.push({ title, planStart, planEnd });
+    }
+  });
+
+  return { stages, errors };
+}
+
 const CLAIM_COLORS: Record<ClaimStatus, string> = {
   pending: "bg-gray-100 text-gray-500",
   submitted: "bg-amber-100 text-amber-700",
@@ -118,6 +176,7 @@ export default function ProjectDetailPage() {
   const [importStep, setImportStep] = useState(1);
   const [selectedTpl, setSelectedTpl] = useState<Template | null>(null);
   const [importStartDate, setImportStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
@@ -375,6 +434,15 @@ export default function ProjectDetailPage() {
     setShowImport(false); loadStages();
     showToast(`Imported ${data.stagesCreated} stages, ${data.mainCreated} main tasks, ${data.subCreated} sub tasks`);
   };
+  const doBulkImport = async (stages: BulkStage[]) => {
+    const res = await fetch(`/api/projects/${id}/bulk-import`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stages }),
+    });
+    const data = await res.json();
+    setShowBulkImport(false); loadStages();
+    showToast(`Imported ${data.stagesCreated} stages, ${data.mainCreated} main tasks, ${data.subCreated} sub tasks`);
+  };
 
   const poValue = bg?.poValue ?? 0;
   const clientTotal = clientClaims.reduce((s, c) => s + c.amount, 0);
@@ -431,6 +499,7 @@ export default function ProjectDetailPage() {
           addingTaskFor={addingTaskFor} setAddingTaskFor={setAddingTaskFor} addTask={addTask}
           taskView={taskView} setTaskView={setTaskView}
           dragging={dragging} hoverId={hoverId} startDrag={startDrag}
+          showBulkImport={showBulkImport} setShowBulkImport={setShowBulkImport}
         />
       )}
 
@@ -464,6 +533,7 @@ export default function ProjectDetailPage() {
           onClose={() => setShowImport(false)} onImport={doImport}
         />
       )}
+      {showBulkImport && <BulkImportModal onClose={() => setShowBulkImport(false)} onImport={doBulkImport} />}
       {toast && (
         <div className="fixed bottom-5 right-5 bg-white border border-gray-200 shadow-lg rounded-lg px-4 py-2.5 text-sm text-gray-700 z-50">
           {toast}
@@ -701,10 +771,16 @@ function PlanTab(props: {
   addingTaskFor: { stageId: string; parentId: string | null } | null; setAddingTaskFor: (v: { stageId: string; parentId: string | null } | null) => void;
   addTask: (stageId: string, parentId: string | null, title: string) => void;
   taskView: "list" | "timeline"; setTaskView: (v: "list" | "timeline") => void;
+  showBulkImport: boolean; setShowBulkImport: (b: boolean) => void;
 } & DragCtl) {
   return (
     <div>
-      <p className="text-xs text-gray-400 mb-3">Build and adjust the stage / main task / sub task structure and planned dates here. Background shows a read-only summary of this; Stages is for logging actual progress and remarks.</p>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs text-gray-400">Build and adjust the stage / main task / sub task structure and planned dates here. Background shows a read-only summary of this; Stages is for logging actual progress and remarks.</p>
+        <button onClick={() => props.setShowBulkImport(true)} className="flex items-center gap-1.5 border border-gray-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-50 flex-shrink-0 ml-3">
+          <Upload className="w-3.5 h-3.5" /> Bulk import from text
+        </button>
+      </div>
       <TaskTree {...props} />
     </div>
   );
@@ -1319,6 +1395,70 @@ function ExportModal({ onClose, onExport }: { onClose: () => void; onExport: (na
         <button onClick={() => onExport(name, includeDurations, true)} className="bg-blue-600 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1"><Download className="w-3.5 h-3.5" /> Save to library &amp; download</button>
         <button onClick={() => onExport(name, includeDurations, false)} className="border border-gray-300 text-xs px-3 py-1.5 rounded-lg">Download only</button>
       </div>
+    </Modal>
+  );
+}
+
+function BulkImportModal({ onClose, onImport }: { onClose: () => void; onImport: (stages: BulkStage[]) => void }) {
+  const [text, setText] = useState("");
+  const [parsed, setParsed] = useState<{ stages: BulkStage[]; errors: string[] } | null>(null);
+
+  return (
+    <Modal title="Bulk import from text" onClose={onClose}>
+      {!parsed ? (
+        <>
+          <p className="text-xs text-gray-500 mb-2">
+            One line per row: <b>1</b> = stage, <b>2</b> = main task, <b>3</b> = sub task, then title, then optional plan start/end dates.
+            Paste directly from Excel (columns come through as tabs automatically), or type using <code className="bg-gray-100 px-1 rounded">|</code> as the separator.
+          </p>
+          <pre className="text-[10px] bg-gray-50 border border-gray-200 rounded-lg p-2 mb-2 whitespace-pre-wrap text-gray-500 leading-relaxed">
+{`1 | Pre-Quotation
+2 | Initiate discussion on requirements | 10-Sep-25 | 17-Sep-25
+3 | Receive query on affected infra
+2 | Next main task | 20-Sep-25 | 25-Sep-25`}
+          </pre>
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={10}
+            placeholder="Paste or type here…"
+            className="w-full text-xs font-mono border border-gray-300 rounded-lg px-2 py-1.5 mb-3" />
+          <button disabled={!text.trim()} onClick={() => setParsed(parseBulkText(text))}
+            className="bg-blue-600 text-white text-xs px-3 py-1.5 rounded-lg disabled:opacity-40">Preview</button>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-gray-500 mb-2">
+            {parsed.stages.length} stage(s), {parsed.stages.reduce((s, st) => s + st.tasks.length, 0)} main task(s),{" "}
+            {parsed.stages.reduce((s, st) => s + st.tasks.reduce((s2, t) => s2 + t.subTasks.length, 0), 0)} sub task(s) found.
+          </p>
+          {parsed.errors.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-2 mb-2 text-xs text-red-600 max-h-24 overflow-y-auto">
+              {parsed.errors.map((e, i) => <p key={i}>{e}</p>)}
+            </div>
+          )}
+          <div className="border border-gray-200 rounded-lg overflow-hidden mb-3 max-h-56 overflow-y-auto">
+            {parsed.stages.length === 0 && <p className="text-xs text-gray-400 text-center py-4">Nothing valid parsed — check the format.</p>}
+            {parsed.stages.map((s, i) => (
+              <div key={i}>
+                <div className="bg-gray-50 px-3 py-1.5 text-xs font-medium border-b border-gray-100">{s.name}</div>
+                {s.tasks.map((t, j) => (
+                  <div key={j}>
+                    <div className="px-5 py-1 text-xs border-b border-gray-100">
+                      {t.title} {t.planStart && <span className="text-gray-400">({fmtDate(t.planStart)} – {fmtDate(t.planEnd)})</span>}
+                    </div>
+                    {t.subTasks.map((st, k) => (
+                      <div key={k} className="px-8 py-1 text-[11px] text-gray-500 border-b border-gray-100">{st.title}</div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setParsed(null)} className="border border-gray-300 text-xs px-3 py-1.5 rounded-lg">Back</button>
+            <button disabled={parsed.stages.length === 0} onClick={() => onImport(parsed.stages)}
+              className="bg-blue-600 text-white text-xs px-3 py-1.5 rounded-lg disabled:opacity-40">Import into project</button>
+          </div>
+        </>
+      )}
     </Modal>
   );
 }
