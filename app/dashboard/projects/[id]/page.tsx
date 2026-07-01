@@ -281,6 +281,7 @@ export default function ProjectDetailPage() {
           openComments={openComments} toggleComments={toggleComments} closeAllComments={closeAllComments}
           remarkDrafts={remarkDrafts} setRemarkDrafts={setRemarkDrafts} submitRemark={submitRemark} attachPhoto={attachPhoto}
           patchTask={patchTask} patchStage={patchStage}
+          newStageName={newStageName} setNewStageName={setNewStageName} addStage={addStage} deleteStage={deleteStage}
         />
       )}
 
@@ -710,13 +711,13 @@ function StagesTab(props: {
   openComments: Set<string>; toggleComments: (id: string) => void; closeAllComments: () => void;
   remarkDrafts: Record<string, string>; setRemarkDrafts: (r: Record<string, string>) => void; submitRemark: (id: string) => void; attachPhoto: (id: string) => void;
   patchTask: (id: string, v: Partial<PlanTask>) => void; patchStage: (id: string, v: Partial<Stage>) => void;
+  newStageName: string; setNewStageName: (s: string) => void; addStage: () => void; deleteStage: (id: string) => void;
 }) {
   const {
     stages, tasks, comments, openTasks, toggleOpen, expandAllTasks, collapseAllTasks,
     openComments, toggleComments, closeAllComments, remarkDrafts, setRemarkDrafts, submitRemark, attachPhoto, patchTask, patchStage,
+    newStageName, setNewStageName, addStage, deleteStage,
   } = props;
-
-  if (stages.length === 0) return <p className="text-sm text-gray-400 text-center py-16">No stages yet — add stages in the Background tab.</p>;
 
   return (
     <div>
@@ -728,6 +729,8 @@ function StagesTab(props: {
           <button onClick={closeAllComments} className="text-xs border border-gray-300 rounded px-2 py-1">Close remarks</button>
         </div>
       </div>
+
+      {stages.length === 0 && <p className="text-sm text-gray-400 text-center py-10">No stages yet — add one below.</p>}
 
       {stages.map(stage => {
         const mainTasks = tasks.filter(t => t.stageId === stage.id && !t.parentId);
@@ -741,6 +744,7 @@ function StagesTab(props: {
                 <option value="in_progress">In progress</option>
                 <option value="done">Done</option>
               </select>
+              <button onClick={() => deleteStage(stage.id)} className="w-5 h-5 border border-gray-200 rounded flex items-center justify-center text-gray-400 hover:border-red-300 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
             </div>
             {mainTasks.length === 0 ? (
               <p className="text-xs text-gray-400 px-3 py-3">No tasks yet.</p>
@@ -752,6 +756,12 @@ function StagesTab(props: {
           </div>
         );
       })}
+
+      <div className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 flex gap-2">
+        <input value={newStageName} onChange={e => setNewStageName(e.target.value)} onKeyDown={e => e.key === "Enter" && addStage()}
+          placeholder="New stage name…" className="flex-1 text-xs border border-gray-300 rounded px-2 py-1.5 bg-white" />
+        <button onClick={addStage} className="text-xs text-blue-600 flex items-center gap-1 px-2"><Plus className="w-3.5 h-3.5" /> Add stage</button>
+      </div>
     </div>
   );
 }
