@@ -839,8 +839,8 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
   if (notes.length === 0 && !editMode) return null;
 
   return (
-    <div className={`grid grid-cols-[1fr_70px_70px_70px_70px] gap-1 ${indent} pr-2.5 ${notes.length > 0 ? "bg-amber-50/50" : ""} border-b border-gray-100`}>
-      <div className="py-1 space-y-0.5 min-w-0">
+    <div className={`grid grid-cols-[minmax(0,1fr)_70px_70px_70px_70px] gap-1 ${indent} pr-2.5 ${notes.length > 0 ? "bg-amber-50/50" : ""} border-b border-gray-100`}>
+      <div className="py-1 space-y-0.5 min-w-0 overflow-hidden">
         {notes.map(c => (
           <div key={c.id} className="flex items-start gap-1.5">
             <MessageSquare className="w-3 h-3 mt-0.5 flex-shrink-0 text-amber-500" />
