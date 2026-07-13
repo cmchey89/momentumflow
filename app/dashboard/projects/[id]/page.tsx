@@ -839,41 +839,44 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
   if (notes.length === 0 && !editMode) return null;
 
   return (
-    <div className={`${indent} pr-2.5 ${notes.length > 0 ? "bg-amber-50/50" : ""} border-b border-gray-100 py-1 space-y-0.5`}>
-      {notes.map(c => (
-        <div key={c.id} className="flex items-start gap-1.5">
-          <MessageSquare className="w-3 h-3 mt-0.5 flex-shrink-0 text-amber-500" />
-          {editMode && editingId === c.id ? (
-            <div className="flex items-center gap-1.5 flex-1 max-w-xs">
-              <input autoFocus value={editingText} onChange={e => setEditingText(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") saveEdit(c.id); if (e.key === "Escape") setEditingId(null); }}
-                className="flex-1 text-sm border border-sky-300 rounded-lg px-2 py-0.5 bg-white focus:outline-none" />
-              <button onClick={() => saveEdit(c.id)} className="text-xs text-sky-600 font-medium flex-shrink-0">Save</button>
-              <button onClick={() => setEditingId(null)} className="text-gray-300 hover:text-gray-500 flex-shrink-0"><X className="w-3 h-3" /></button>
-            </div>
-          ) : (
-            <span className="text-sm text-amber-800 flex-1 min-w-0">
-              <b className="font-medium">{c.authorName}</b> · {new Date(c.createdAt).toLocaleDateString()} — {c.text}
-            </span>
-          )}
-          {editMode && editingId !== c.id && (
-            <div className="flex items-center gap-1 ml-auto flex-shrink-0">
-              <button onClick={() => { setEditingId(c.id); setEditingText(c.text ?? ""); }} title="Edit comment" className="text-gray-300 hover:text-sky-500 transition-colors"><Pencil className="w-3 h-3" /></button>
-              <button onClick={() => deleteRemark(c.id)} title="Delete comment" className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
-            </div>
-          )}
-        </div>
-      ))}
-      {editMode && (
-        <div className="flex items-center gap-1.5 pt-0.5 max-w-[50%]">
-          <input value={draft} onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") submit(); }}
-            placeholder="Add update or blocker…"
-            className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white focus:border-sky-300 focus:outline-none" />
-          <button onClick={submit} disabled={!draft.trim()}
-            className="text-xs text-sky-600 font-medium flex-shrink-0 disabled:opacity-40 px-1">Post</button>
-        </div>
-      )}
+    <div className={`grid grid-cols-[1fr_70px_70px_70px_70px] gap-1 ${indent} pr-2.5 ${notes.length > 0 ? "bg-amber-50/50" : ""} border-b border-gray-100`}>
+      <div className="py-1 space-y-0.5 min-w-0">
+        {notes.map(c => (
+          <div key={c.id} className="flex items-start gap-1.5">
+            <MessageSquare className="w-3 h-3 mt-0.5 flex-shrink-0 text-amber-500" />
+            {editMode && editingId === c.id ? (
+              <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                <input autoFocus value={editingText} onChange={e => setEditingText(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") saveEdit(c.id); if (e.key === "Escape") setEditingId(null); }}
+                  className="flex-1 min-w-0 text-sm border border-sky-300 rounded-lg px-2 py-0.5 bg-white focus:outline-none" />
+                <button onClick={() => saveEdit(c.id)} className="text-xs text-sky-600 font-medium flex-shrink-0">Save</button>
+                <button onClick={() => setEditingId(null)} className="text-gray-300 hover:text-gray-500 flex-shrink-0"><X className="w-3 h-3" /></button>
+              </div>
+            ) : (
+              <span className="text-sm text-amber-800 flex-1 min-w-0 break-words">
+                <b className="font-medium">{c.authorName}</b> · {new Date(c.createdAt).toLocaleDateString()} — {c.text}
+              </span>
+            )}
+            {editMode && editingId !== c.id && (
+              <div className="flex items-center gap-1 ml-auto flex-shrink-0">
+                <button onClick={() => { setEditingId(c.id); setEditingText(c.text ?? ""); }} title="Edit comment" className="text-gray-300 hover:text-sky-500 transition-colors"><Pencil className="w-3 h-3" /></button>
+                <button onClick={() => deleteRemark(c.id)} title="Delete comment" className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
+              </div>
+            )}
+          </div>
+        ))}
+        {editMode && (
+          <div className="flex items-center gap-1.5 pt-0.5 max-w-[50%]">
+            <input value={draft} onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") submit(); }}
+              placeholder="Add update or blocker…"
+              className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white focus:border-sky-300 focus:outline-none" />
+            <button onClick={submit} disabled={!draft.trim()}
+              className="text-xs text-sky-600 font-medium flex-shrink-0 disabled:opacity-40 px-1">Post</button>
+          </div>
+        )}
+      </div>
+      <span /><span /><span /><span />
     </div>
   );
 }
