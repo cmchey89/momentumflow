@@ -644,6 +644,7 @@ function BackgroundTab(props: {
   openTasks: Set<string>; toggleOpen: (id: string) => void;
 }) {
   const { bg, bgForm, setBgForm, editing, setEditing, save, files, addFile, deleteFile, stages, tasks, comments, submitRemark, openTasks, toggleOpen } = props;
+  const [notesEditMode, setNotesEditMode] = useState(false);
   return (
     <div>
       <div className="grid grid-cols-2 gap-4 mb-6">
@@ -704,17 +705,25 @@ function BackgroundTab(props: {
       </div>
 
       <div className="border-t border-gray-100 pt-5">
-        <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">Project updates &amp; blockers</p>
-        <p className="text-sm text-gray-400 mb-2">Titles, dates, and status are still edited in the Plan tab. Use <Plus className="w-3 h-3 inline -mt-0.5" /> to post a status update or blocker on a task — it shows here and in the Plan tab's remarks.</p>
-        <StatusTaskTree stages={stages} tasks={tasks} comments={comments} submitRemark={submitRemark} openTasks={openTasks} toggleOpen={toggleOpen} />
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Project updates &amp; blockers</p>
+          <button
+            onClick={() => setNotesEditMode(v => !v)}
+            className={`text-xs px-3 py-1 rounded-lg border transition-colors font-medium ${notesEditMode ? "bg-sky-500 text-white border-sky-500 hover:bg-sky-600" : "border-gray-300 text-gray-500 hover:border-sky-400 hover:text-sky-500"}`}
+          >
+            {notesEditMode ? "Done" : "Edit"}
+          </button>
+        </div>
+        <p className="text-sm text-gray-400 mb-2">Click <b className="text-gray-500">Edit</b> then the <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-sky-100 text-sky-500 text-[10px] font-bold align-middle">+</span> on any task to post a status update or blocker — it shows here and in the Plan tab's remarks.</p>
+        <StatusTaskTree stages={stages} tasks={tasks} comments={comments} submitRemark={submitRemark} openTasks={openTasks} toggleOpen={toggleOpen} editMode={notesEditMode} />
       </div>
     </div>
   );
 }
 
-function StatusTaskTree({ stages, tasks, comments, submitRemark, openTasks, toggleOpen }: {
+function StatusTaskTree({ stages, tasks, comments, submitRemark, openTasks, toggleOpen, editMode }: {
   stages: Stage[]; tasks: PlanTask[]; comments: Comment[]; submitRemark: (taskId: string, text: string) => void;
-  openTasks: Set<string>; toggleOpen: (id: string) => void;
+  openTasks: Set<string>; toggleOpen: (id: string) => void; editMode: boolean;
 }) {
   if (stages.length === 0) return <p className="text-sm text-gray-400 text-center py-10 border border-gray-200 rounded-xl">No stages yet — add them in the Plan tab.</p>;
   return (
@@ -739,7 +748,7 @@ function StatusTaskTree({ stages, tasks, comments, submitRemark, openTasks, togg
             </div>
             {openTasks.has(stage.id) && mainTasks.map(mt => (
               <StatusTaskRow key={mt.id} task={mt} subTasks={tasks.filter(t => t.parentId === mt.id)}
-                comments={comments} submitRemark={submitRemark} openTasks={openTasks} toggleOpen={toggleOpen} />
+                comments={comments} submitRemark={submitRemark} openTasks={openTasks} toggleOpen={toggleOpen} editMode={editMode} />
             ))}
           </div>
         );
@@ -748,9 +757,9 @@ function StatusTaskTree({ stages, tasks, comments, submitRemark, openTasks, togg
   );
 }
 
-function StatusTaskRow({ task, subTasks, comments, submitRemark, openTasks, toggleOpen }: {
+function StatusTaskRow({ task, subTasks, comments, submitRemark, openTasks, toggleOpen, editMode }: {
   task: PlanTask; subTasks: PlanTask[]; comments: Comment[]; submitRemark: (taskId: string, text: string) => void;
-  openTasks: Set<string>; toggleOpen: (id: string) => void;
+  openTasks: Set<string>; toggleOpen: (id: string) => void; editMode: boolean;
 }) {
   const hasChildren = subTasks.length > 0;
   return (
@@ -767,7 +776,7 @@ function StatusTaskRow({ task, subTasks, comments, submitRemark, openTasks, togg
         <span className="text-sm text-blue-500">{fmtDate(task.actualStart)}</span>
         <span className="text-sm text-blue-500">{fmtDate(task.actualEnd)}</span>
       </div>
-      <TaskNotes taskId={task.id} comments={comments} submitRemark={submitRemark} indent="pl-9" />
+      <TaskNotes taskId={task.id} comments={comments} submitRemark={submitRemark} indent="pl-9" editMode={editMode} />
       {openTasks.has(task.id) && subTasks.map(st => (
         <div key={st.id}>
           <div className="grid grid-cols-[1fr_70px_70px_70px_70px] gap-1 items-center pl-9 pr-2.5 py-1.5 bg-white border-b border-gray-100 hover:bg-gray-50">
@@ -780,24 +789,27 @@ function StatusTaskRow({ task, subTasks, comments, submitRemark, openTasks, togg
             <span className="text-sm text-blue-500">{fmtDate(st.actualStart)}</span>
             <span className="text-sm text-blue-500">{fmtDate(st.actualEnd)}</span>
           </div>
-          <TaskNotes taskId={st.id} comments={comments} submitRemark={submitRemark} indent="pl-12" />
+          <TaskNotes taskId={st.id} comments={comments} submitRemark={submitRemark} indent="pl-12" editMode={editMode} />
         </div>
       ))}
     </>
   );
 }
 
-// A "+" between rows that expands into an inline post box, plus any status
-// updates already posted for that task. Reuses the same remarks (Comment)
-// data as the Plan tab and Timeline detail popup, so a note posted here
-// shows up there too, and vice versa.
-function TaskNotes({ taskId, comments, submitRemark, indent }: {
-  taskId: string; comments: Comment[]; submitRemark: (taskId: string, text: string) => void; indent: string;
+function TaskNotes({ taskId, comments, submitRemark, indent, editMode }: {
+  taskId: string; comments: Comment[]; submitRemark: (taskId: string, text: string) => void; indent: string; editMode: boolean;
 }) {
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState("");
   const notes = comments.filter(c => c.taskId === taskId && c.text);
   const submit = () => { if (draft.trim()) { submitRemark(taskId, draft); setDraft(""); setComposing(false); } };
+
+  // Close compose box when leaving edit mode
+  useEffect(() => { if (!editMode) { setComposing(false); setDraft(""); } }, [editMode]);
+
+  // Nothing to render if no notes and not in edit mode
+  if (notes.length === 0 && !editMode) return null;
+
   return (
     <div className={`${indent} pr-2.5 ${notes.length > 0 ? "bg-amber-50/50" : ""} border-b border-gray-100`}>
       {notes.map(c => (
@@ -806,18 +818,24 @@ function TaskNotes({ taskId, comments, submitRemark, indent }: {
           <span><b className="font-medium">{c.authorName}</b> · {new Date(c.createdAt).toLocaleDateString()} — {c.text}</span>
         </p>
       ))}
-      {composing ? (
-        <div className="flex items-center gap-1.5 py-1">
-          <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") setComposing(false); }}
-            placeholder="Status update or blocker…" className="flex-1 text-sm border border-blue-300 rounded-lg px-2 py-1 bg-white" />
-          <button onClick={submit} className="text-sm text-blue-600 font-medium flex-shrink-0">Post</button>
-          <button onClick={() => setComposing(false)} className="text-gray-300 hover:text-gray-500 flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
-        </div>
-      ) : (
-        <button onClick={() => setComposing(true)} className="text-sm text-gray-400 hover:text-blue-500 flex items-center gap-1 py-1">
-          <Plus className="w-3 h-3" /> Add status update
-        </button>
+      {editMode && (
+        composing ? (
+          <div className="flex items-center gap-1.5 py-1">
+            <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") setComposing(false); }}
+              placeholder="Status update or blocker…" className="flex-1 text-sm border border-sky-300 rounded-lg px-2 py-1 bg-white" />
+            <button onClick={submit} className="text-sm text-sky-600 font-medium flex-shrink-0">Post</button>
+            <button onClick={() => setComposing(false)} className="text-gray-300 hover:text-gray-500 flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setComposing(true)}
+            title="Add status update"
+            className="flex items-center justify-center w-5 h-5 rounded-full bg-sky-100 text-sky-500 hover:bg-sky-200 hover:text-sky-600 my-1 transition-colors ring-1 ring-sky-200"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+        )
       )}
     </div>
   );
