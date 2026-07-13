@@ -865,7 +865,7 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
         </div>
       ))}
       {editMode && (
-        <div className="flex items-center gap-1.5 pt-0.5 w-1/2 min-w-[200px]">
+        <div className="flex items-center gap-1.5 pt-0.5 max-w-[50%]">
           <input value={draft} onChange={e => setDraft(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") submit(); }}
             placeholder="Add update or blocker…"
