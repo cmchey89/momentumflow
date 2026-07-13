@@ -6,6 +6,7 @@ import {
   ArrowLeft, Plus, ChevronRight, MessageSquare, Flag, Trash2,
   Upload, Download, FileText, X,
 } from "lucide-react";
+import QuotationsTab from "./quotations-tab";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -143,8 +144,8 @@ const CLAIM_COLORS: Record<ClaimStatus, string> = {
   paid: "bg-green-100 text-green-700",
 };
 const STAGE_DOT: Record<StageStatus, string> = { pending: "bg-gray-300", in_progress: "bg-amber-500", done: "bg-green-600" };
-const TAB_LABELS: Record<"background" | "plan" | "finance", string> = {
-  background: "Background", plan: "Plan", finance: "Finance",
+const TAB_LABELS: Record<"background" | "plan" | "finance" | "quotations", string> = {
+  background: "Background", plan: "Plan", finance: "Finance", quotations: "Quotations",
 };
 
 function fmtMoney(n: number) { return `$${n.toLocaleString()}`; }
@@ -175,7 +176,7 @@ function longPressHandlers(onActivate: () => void, delay = 500) {
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [tab, setTab] = useState<"background" | "plan" | "finance">("background");
+  const [tab, setTab] = useState<"background" | "plan" | "finance" | "quotations">("background");
   const [project, setProject] = useState<Project | null>(null);
 
   // background
@@ -509,7 +510,7 @@ export default function ProjectDetailPage() {
       </div>
 
       <div className="flex border-b border-gray-200 mb-6">
-        {(["background", "plan", "finance"] as const).map(t => (
+        {(["background", "plan", "finance", "quotations"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm -mb-px border-b-2 ${tab === t ? "border-blue-600 text-blue-600 font-medium" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
             {TAB_LABELS[t]}
@@ -521,7 +522,7 @@ export default function ProjectDetailPage() {
         <BackgroundTab
           bg={bg} bgForm={bgForm} setBgForm={setBgForm} editing={editingBg} setEditing={setEditingBg} save={saveBg}
           files={files} addFile={addFile} deleteFile={deleteFile}
-          stages={stages} tasks={tasks}
+          stages={stages} tasks={tasks} comments={comments} submitRemark={submitRemark}
           openTasks={openTasks} toggleOpen={toggleOpen}
         />
       )}
@@ -548,6 +549,10 @@ export default function ProjectDetailPage() {
           showContractorForm={showContractorForm} setShowContractorForm={setShowContractorForm} addContractor={addContractor}
           showClaimForm={showClaimForm} setShowClaimForm={setShowClaimForm} addClaim={addClaim} setClaimStatus={setClaimStatus}
         />
+      )}
+
+      {tab === "quotations" && (
+        <QuotationsTab projectId={id} projectName={project?.name ?? ""} clientDefault={bg?.client ?? null} />
       )}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} onExport={doExport} />}
@@ -640,10 +645,10 @@ function EditableName({ value, onSave, className }: { value: string; onSave: (v:
 function BackgroundTab(props: {
   bg: Background | null; bgForm: Background; setBgForm: (b: Background) => void; editing: boolean; setEditing: (b: boolean) => void; save: () => void;
   files: ProjFile[]; addFile: () => void; deleteFile: (fileId: string) => void;
-  stages: Stage[]; tasks: PlanTask[];
+  stages: Stage[]; tasks: PlanTask[]; comments: Comment[]; submitRemark: (taskId: string, text: string) => void;
   openTasks: Set<string>; toggleOpen: (id: string) => void;
 }) {
-  const { bg, bgForm, setBgForm, editing, setEditing, save, files, addFile, deleteFile, stages, tasks, openTasks, toggleOpen } = props;
+  const { bg, bgForm, setBgForm, editing, setEditing, save, files, addFile, deleteFile, stages, tasks, comments, submitRemark, openTasks, toggleOpen } = props;
   return (
     <div>
       <div className="grid grid-cols-2 gap-4 mb-6">
@@ -704,15 +709,17 @@ function BackgroundTab(props: {
       </div>
 
       <div className="border-t border-gray-100 pt-5">
-        <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Task breakdown (read-only — edit in the Plan tab)</p>
-        <ReadOnlyTaskTree stages={stages} tasks={tasks} openTasks={openTasks} toggleOpen={toggleOpen} />
+        <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">Project updates &amp; blockers</p>
+        <p className="text-sm text-gray-400 mb-2">Titles, dates, and status are still edited in the Plan tab. Use <Plus className="w-3 h-3 inline -mt-0.5" /> to post a status update or blocker on a task — it shows here and in the Plan tab's remarks.</p>
+        <StatusTaskTree stages={stages} tasks={tasks} comments={comments} submitRemark={submitRemark} openTasks={openTasks} toggleOpen={toggleOpen} />
       </div>
     </div>
   );
 }
 
-function ReadOnlyTaskTree({ stages, tasks, openTasks, toggleOpen }: {
-  stages: Stage[]; tasks: PlanTask[]; openTasks: Set<string>; toggleOpen: (id: string) => void;
+function StatusTaskTree({ stages, tasks, comments, submitRemark, openTasks, toggleOpen }: {
+  stages: Stage[]; tasks: PlanTask[]; comments: Comment[]; submitRemark: (taskId: string, text: string) => void;
+  openTasks: Set<string>; toggleOpen: (id: string) => void;
 }) {
   if (stages.length === 0) return <p className="text-sm text-gray-400 text-center py-10 border border-gray-200 rounded-xl">No stages yet — add them in the Plan tab.</p>;
   return (
@@ -736,7 +743,8 @@ function ReadOnlyTaskTree({ stages, tasks, openTasks, toggleOpen }: {
               <span className="text-sm text-blue-500">{fmtDate(stage.actualEnd)}</span>
             </div>
             {openTasks.has(stage.id) && mainTasks.map(mt => (
-              <ReadOnlyTaskRow key={mt.id} task={mt} subTasks={tasks.filter(t => t.parentId === mt.id)} openTasks={openTasks} toggleOpen={toggleOpen} />
+              <StatusTaskRow key={mt.id} task={mt} subTasks={tasks.filter(t => t.parentId === mt.id)}
+                comments={comments} submitRemark={submitRemark} openTasks={openTasks} toggleOpen={toggleOpen} />
             ))}
           </div>
         );
@@ -745,13 +753,14 @@ function ReadOnlyTaskTree({ stages, tasks, openTasks, toggleOpen }: {
   );
 }
 
-function ReadOnlyTaskRow({ task, subTasks, openTasks, toggleOpen }: {
-  task: PlanTask; subTasks: PlanTask[]; openTasks: Set<string>; toggleOpen: (id: string) => void;
+function StatusTaskRow({ task, subTasks, comments, submitRemark, openTasks, toggleOpen }: {
+  task: PlanTask; subTasks: PlanTask[]; comments: Comment[]; submitRemark: (taskId: string, text: string) => void;
+  openTasks: Set<string>; toggleOpen: (id: string) => void;
 }) {
   const hasChildren = subTasks.length > 0;
   return (
     <>
-      <div className="grid grid-cols-[1fr_70px_70px_70px_70px] gap-1 items-center pl-5 pr-2.5 py-1.5 bg-white border-b border-gray-100 cursor-pointer hover:bg-gray-50" onClick={() => hasChildren && toggleOpen(task.id)}>
+      <div className="grid grid-cols-[1fr_70px_70px_70px_70px] gap-1 items-center pl-5 pr-2.5 py-1.5 bg-white border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => hasChildren && toggleOpen(task.id)}>
         <div className="flex items-center gap-1.5 min-w-0">
           {hasChildren ? <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${openTasks.has(task.id) ? "rotate-90" : ""}`} /> : <span className="w-3 text-center text-gray-300 text-sm">—</span>}
           <span className={`w-1.5 h-1.5 rotate-45 flex-shrink-0 ${task.isMilestone ? "bg-purple-600" : "bg-gray-400"}`} />
@@ -763,19 +772,59 @@ function ReadOnlyTaskRow({ task, subTasks, openTasks, toggleOpen }: {
         <span className="text-sm text-blue-500">{fmtDate(task.actualStart)}</span>
         <span className="text-sm text-blue-500">{fmtDate(task.actualEnd)}</span>
       </div>
+      <TaskNotes taskId={task.id} comments={comments} submitRemark={submitRemark} indent="pl-9" />
       {openTasks.has(task.id) && subTasks.map(st => (
-        <div key={st.id} className="grid grid-cols-[1fr_70px_70px_70px_70px] gap-1 items-center pl-9 pr-2.5 py-1.5 bg-white border-b border-gray-100">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="w-1.5 h-[1.5px] bg-gray-300 flex-shrink-0" />
-            <span className="text-sm text-gray-500 truncate">{st.title}</span>
+        <div key={st.id}>
+          <div className="grid grid-cols-[1fr_70px_70px_70px_70px] gap-1 items-center pl-9 pr-2.5 py-1.5 bg-white border-b border-gray-100 hover:bg-gray-50">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="w-1.5 h-[1.5px] bg-gray-300 flex-shrink-0" />
+              <span className="text-sm text-gray-500 truncate">{st.title}</span>
+            </div>
+            <span className="text-sm text-gray-400">{fmtDate(st.planStart)}</span>
+            <span className="text-sm text-gray-400">{fmtDate(st.planEnd)}</span>
+            <span className="text-sm text-blue-500">{fmtDate(st.actualStart)}</span>
+            <span className="text-sm text-blue-500">{fmtDate(st.actualEnd)}</span>
           </div>
-          <span className="text-sm text-gray-400">{fmtDate(st.planStart)}</span>
-          <span className="text-sm text-gray-400">{fmtDate(st.planEnd)}</span>
-          <span className="text-sm text-blue-500">{fmtDate(st.actualStart)}</span>
-          <span className="text-sm text-blue-500">{fmtDate(st.actualEnd)}</span>
+          <TaskNotes taskId={st.id} comments={comments} submitRemark={submitRemark} indent="pl-12" />
         </div>
       ))}
     </>
+  );
+}
+
+// A "+" between rows that expands into an inline post box, plus any status
+// updates already posted for that task. Reuses the same remarks (Comment)
+// data as the Plan tab and Timeline detail popup, so a note posted here
+// shows up there too, and vice versa.
+function TaskNotes({ taskId, comments, submitRemark, indent }: {
+  taskId: string; comments: Comment[]; submitRemark: (taskId: string, text: string) => void; indent: string;
+}) {
+  const [composing, setComposing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const notes = comments.filter(c => c.taskId === taskId && c.text);
+  const submit = () => { if (draft.trim()) { submitRemark(taskId, draft); setDraft(""); setComposing(false); } };
+  return (
+    <div className={`${indent} pr-2.5 ${notes.length > 0 ? "bg-amber-50/50" : ""} border-b border-gray-100`}>
+      {notes.map(c => (
+        <p key={c.id} className="text-sm text-amber-800 py-1 flex items-start gap-1.5">
+          <MessageSquare className="w-3 h-3 mt-0.5 flex-shrink-0 text-amber-500" />
+          <span><b className="font-medium">{c.authorName}</b> · {new Date(c.createdAt).toLocaleDateString()} — {c.text}</span>
+        </p>
+      ))}
+      {composing ? (
+        <div className="flex items-center gap-1.5 py-1">
+          <input autoFocus value={draft} onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") setComposing(false); }}
+            placeholder="Status update or blocker…" className="flex-1 text-sm border border-blue-300 rounded-lg px-2 py-1 bg-white" />
+          <button onClick={submit} className="text-sm text-blue-600 font-medium flex-shrink-0">Post</button>
+          <button onClick={() => setComposing(false)} className="text-gray-300 hover:text-gray-500 flex-shrink-0"><X className="w-3.5 h-3.5" /></button>
+        </div>
+      ) : (
+        <button onClick={() => setComposing(true)} className="text-sm text-gray-400 hover:text-blue-500 flex items-center gap-1 py-1">
+          <Plus className="w-3 h-3" /> Add status update
+        </button>
+      )}
+    </div>
   );
 }
 
