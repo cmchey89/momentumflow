@@ -866,9 +866,9 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
                   onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(c.id); } if (e.key === "Escape") setEditingId(null); }}
                   rows={1}
                   onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
-                  className="flex-1 min-w-0 text-sm border border-sky-300 rounded-md px-2 py-0.5 bg-white focus:outline-none resize-none overflow-hidden" />
-                <button onClick={() => saveEdit(c.id)} className="text-xs text-sky-600 font-medium flex-shrink-0 mt-0.5">Save</button>
-                <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0 mt-0.5"><X className="w-3 h-3" /></button>
+                  className="flex-1 min-w-0 text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-sky-300 focus:outline-none resize-none overflow-hidden" />
+                <button onClick={() => saveEdit(c.id)} className="text-xs text-sky-600 font-semibold flex-shrink-0 mt-1.5">Save</button>
+                <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0 mt-1.5"><X className="w-3 h-3" /></button>
               </div>
             ) : (
               <p className="text-sm text-gray-700 leading-snug" style={{ overflowWrap: "anywhere" }}>{c.text}</p>
