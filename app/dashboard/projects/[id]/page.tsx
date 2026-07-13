@@ -6,7 +6,6 @@ import {
   ArrowLeft, Plus, ChevronRight, MessageSquare, Flag, Trash2,
   Upload, Download, FileText, X,
 } from "lucide-react";
-import QuotationsTab from "./quotations-tab";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -144,8 +143,8 @@ const CLAIM_COLORS: Record<ClaimStatus, string> = {
   paid: "bg-green-100 text-green-700",
 };
 const STAGE_DOT: Record<StageStatus, string> = { pending: "bg-gray-300", in_progress: "bg-amber-500", done: "bg-green-600" };
-const TAB_LABELS: Record<"background" | "plan" | "finance" | "quotations", string> = {
-  background: "Background", plan: "Plan", finance: "Finance", quotations: "Quotations",
+const TAB_LABELS: Record<"background" | "plan" | "finance", string> = {
+  background: "Background", plan: "Plan", finance: "Finance",
 };
 
 function fmtMoney(n: number) { return `$${n.toLocaleString()}`; }
@@ -176,7 +175,7 @@ function longPressHandlers(onActivate: () => void, delay = 500) {
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [tab, setTab] = useState<"background" | "plan" | "finance" | "quotations">("background");
+  const [tab, setTab] = useState<"background" | "plan" | "finance">("background");
   const [project, setProject] = useState<Project | null>(null);
 
   // background
@@ -510,7 +509,7 @@ export default function ProjectDetailPage() {
       </div>
 
       <div className="flex border-b border-gray-200 mb-6">
-        {(["background", "plan", "finance", "quotations"] as const).map(t => (
+        {(["background", "plan", "finance"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm -mb-px border-b-2 ${tab === t ? "border-blue-600 text-blue-600 font-medium" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
             {TAB_LABELS[t]}
@@ -549,10 +548,6 @@ export default function ProjectDetailPage() {
           showContractorForm={showContractorForm} setShowContractorForm={setShowContractorForm} addContractor={addContractor}
           showClaimForm={showClaimForm} setShowClaimForm={setShowClaimForm} addClaim={addClaim} setClaimStatus={setClaimStatus}
         />
-      )}
-
-      {tab === "quotations" && (
-        <QuotationsTab projectId={id} projectName={project?.name ?? ""} clientDefault={bg?.client ?? null} />
       )}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} onExport={doExport} />}
