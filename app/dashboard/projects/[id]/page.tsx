@@ -845,12 +845,14 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
           <div key={c.id} className="flex items-start gap-1.5">
             <MessageSquare className="w-3 h-3 mt-0.5 flex-shrink-0 text-amber-500" />
             {editMode && editingId === c.id ? (
-              <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                <input autoFocus value={editingText} onChange={e => setEditingText(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") saveEdit(c.id); if (e.key === "Escape") setEditingId(null); }}
-                  className="flex-1 min-w-0 text-sm border border-sky-300 rounded-lg px-2 py-0.5 bg-white focus:outline-none" />
-                <button onClick={() => saveEdit(c.id)} className="text-xs text-sky-600 font-medium flex-shrink-0">Save</button>
-                <button onClick={() => setEditingId(null)} className="text-gray-300 hover:text-gray-500 flex-shrink-0"><X className="w-3 h-3" /></button>
+              <div className="flex items-start gap-1.5 flex-1 min-w-0">
+                <textarea autoFocus value={editingText} onChange={e => setEditingText(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(c.id); } if (e.key === "Escape") setEditingId(null); }}
+                  rows={1}
+                  onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
+                  className="flex-1 min-w-0 text-sm border border-sky-300 rounded-lg px-2 py-0.5 bg-white focus:outline-none resize-none overflow-hidden" />
+                <button onClick={() => saveEdit(c.id)} className="text-xs text-sky-600 font-medium flex-shrink-0 mt-0.5">Save</button>
+                <button onClick={() => setEditingId(null)} className="text-gray-300 hover:text-gray-500 flex-shrink-0 mt-0.5"><X className="w-3 h-3" /></button>
               </div>
             ) : (
               <span className="text-sm text-amber-800 flex-1 min-w-0 break-words">
@@ -866,13 +868,15 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
           </div>
         ))}
         {editMode && (
-          <div className="flex items-center gap-1.5 pt-0.5 max-w-[50%]">
-            <input value={draft} onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") submit(); }}
+          <div className="flex items-start gap-1.5 pt-0.5 max-w-[50%]">
+            <textarea value={draft} onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+              onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
               placeholder="Add update or blocker…"
-              className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white focus:border-sky-300 focus:outline-none" />
+              rows={1}
+              className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white focus:border-sky-300 focus:outline-none resize-none overflow-hidden" />
             <button onClick={submit} disabled={!draft.trim()}
-              className="text-xs text-sky-600 font-medium flex-shrink-0 disabled:opacity-40 px-1">Post</button>
+              className="text-xs text-sky-600 font-medium flex-shrink-0 disabled:opacity-40 px-1 mt-1">Post</button>
           </div>
         )}
       </div>
