@@ -745,14 +745,18 @@ function StatusTaskTree({ stages, tasks, comments, submitRemark, updateRemark, d
   if (stages.length === 0) return <p className="text-sm text-gray-400 text-center py-10 border border-gray-200 rounded-xl">No stages yet — add them in the Plan tab.</p>;
   return (
     <div className="border border-gray-200 rounded-xl overflow-hidden">
-      <div className="grid grid-cols-[minmax(0,1fr)_70px_70px_70px_70px] gap-1 bg-gray-50 border-b border-gray-200 px-2.5 py-1.5 text-sm font-medium text-gray-400 uppercase">
-        <span>Activity</span><span>Plan start</span><span>Plan end</span><span>Act. start</span><span>Act. end</span>
+      <div className="grid grid-cols-[minmax(0,1fr)_90px_90px_90px_90px] gap-1 bg-gray-50 border-b border-gray-200 px-2.5 py-1.5 text-sm font-medium text-gray-400 uppercase">
+        <span>Activity</span>
+        <span className="whitespace-nowrap">Plan start</span>
+        <span className="whitespace-nowrap">Plan end</span>
+        <span className="whitespace-nowrap">Act. start</span>
+        <span className="whitespace-nowrap">Act. end</span>
       </div>
       {stages.map(stage => {
         const mainTasks = tasks.filter(t => t.stageId === stage.id && !t.parentId);
         return (
           <div key={stage.id}>
-            <div className="grid grid-cols-[minmax(0,1fr)_70px_70px_70px_70px] gap-1 items-center px-2.5 py-2 bg-gray-50 border-b border-gray-200 cursor-pointer" onClick={() => toggleOpen(stage.id)}>
+            <div className="grid grid-cols-[minmax(0,1fr)_90px_90px_90px_90px] gap-1 items-center px-2.5 py-2 bg-gray-50 border-b border-gray-200 cursor-pointer" onClick={() => toggleOpen(stage.id)}>
               <div className="flex items-center gap-1.5 min-w-0">
                 <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${openTasks.has(stage.id) ? "rotate-90" : ""}`} />
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${STAGE_DOT[stage.status]}`} />
@@ -784,7 +788,7 @@ function StatusTaskRow({ task, subTasks, comments, submitRemark, updateRemark, d
   const hasChildren = subTasks.length > 0;
   return (
     <>
-      <div className="grid grid-cols-[minmax(0,1fr)_70px_70px_70px_70px] gap-1 items-center pl-5 pr-2.5 py-1.5 bg-white border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => hasChildren && toggleOpen(task.id)}>
+      <div className="grid grid-cols-[minmax(0,1fr)_90px_90px_90px_90px] gap-1 items-center pl-5 pr-2.5 py-1.5 bg-white border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => hasChildren && toggleOpen(task.id)}>
         <div className="flex items-center gap-1.5 min-w-0">
           {hasChildren ? <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${openTasks.has(task.id) ? "rotate-90" : ""}`} /> : <span className="w-3 text-center text-gray-300 text-sm">—</span>}
           <span className={`w-1.5 h-1.5 rotate-45 flex-shrink-0 ${task.isMilestone ? "bg-purple-600" : "bg-gray-400"}`} />
@@ -799,7 +803,7 @@ function StatusTaskRow({ task, subTasks, comments, submitRemark, updateRemark, d
       <TaskNotes taskId={task.id} comments={comments} submitRemark={submitRemark} updateRemark={updateRemark} deleteRemark={deleteRemark} indent="pl-9" editMode={editMode} />
       {openTasks.has(task.id) && subTasks.map(st => (
         <div key={st.id}>
-          <div className="grid grid-cols-[minmax(0,1fr)_70px_70px_70px_70px] gap-1 items-center pl-9 pr-2.5 py-1.5 bg-white border-b border-gray-100 hover:bg-gray-50">
+          <div className="grid grid-cols-[minmax(0,1fr)_90px_90px_90px_90px] gap-1 items-center pl-9 pr-2.5 py-1.5 bg-white border-b border-gray-100 hover:bg-gray-50">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="w-1.5 h-[1.5px] bg-gray-300 flex-shrink-0" />
               <span className="text-sm text-gray-500 truncate">{st.title}</span>
@@ -839,7 +843,7 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
   if (notes.length === 0 && !editMode) return null;
 
   return (
-    <div className={`grid grid-cols-[minmax(0,1fr)_70px_70px_70px_70px] gap-1 ${indent} pr-2.5 border-b border-gray-100`}>
+    <div className={`grid grid-cols-[minmax(0,1fr)_90px_90px_90px_90px] gap-1 ${indent} pr-2.5 border-b border-gray-100`}>
       <div className="py-1.5 space-y-1.5 min-w-0 overflow-hidden">
         {notes.map(c => (
           <div key={c.id} className="rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-1.5">
