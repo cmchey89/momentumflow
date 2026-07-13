@@ -855,7 +855,7 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
                 <button onClick={() => setEditingId(null)} className="text-gray-300 hover:text-gray-500 flex-shrink-0 mt-0.5"><X className="w-3 h-3" /></button>
               </div>
             ) : (
-              <span className="text-sm text-amber-800 flex-1 min-w-0 break-words">
+              <span className="text-sm text-amber-800 flex-1 min-w-0" style={{ overflowWrap: "anywhere" }}>
                 <b className="font-medium">{c.authorName}</b> · {new Date(c.createdAt).toLocaleDateString()} — {c.text}
               </span>
             )}
@@ -868,13 +868,13 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
           </div>
         ))}
         {editMode && (
-          <div className="flex items-start gap-1.5 pt-0.5 max-w-[50%]">
+          <div className="flex items-start gap-1.5 pt-0.5" style={{ width: "50%" }}>
             <textarea value={draft} onChange={e => setDraft(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
               onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
               placeholder="Add update or blocker…"
               rows={1}
-              className="flex-1 text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white focus:border-sky-300 focus:outline-none resize-none overflow-hidden" />
+              className="flex-1 min-w-0 text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white focus:border-sky-300 focus:outline-none resize-none overflow-hidden" />
             <button onClick={submit} disabled={!draft.trim()}
               className="text-xs text-sky-600 font-medium flex-shrink-0 disabled:opacity-40 px-1 mt-1">Post</button>
           </div>
