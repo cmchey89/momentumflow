@@ -861,7 +861,7 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
             </div>
             {/* comment body */}
             {editMode && editingId === c.id ? (
-              <div className="flex items-start gap-1.5">
+              <div className="flex items-start gap-1.5" style={{ width: "50%" }}>
                 <textarea autoFocus value={editingText} onChange={e => setEditingText(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(c.id); } if (e.key === "Escape") setEditingId(null); }}
                   rows={1}
