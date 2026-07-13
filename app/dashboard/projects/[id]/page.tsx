@@ -846,7 +846,7 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
     <div className={`grid grid-cols-[minmax(0,1fr)_90px_90px_90px_90px] gap-1 ${indent} pr-2.5 border-b border-gray-100`}>
       <div className="py-1.5 space-y-1.5 min-w-0 overflow-hidden">
         {notes.map(c => (
-          <div key={c.id} className="rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-1.5">
+          <div key={c.id} className="rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-1.5" style={{ width: "50%" }}>
             {/* header row: author · date + edit/delete */}
             <div className="flex items-center justify-between gap-2 mb-0.5">
               <span className="text-xs font-semibold text-gray-600">
