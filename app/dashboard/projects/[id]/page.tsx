@@ -543,6 +543,7 @@ export default function ProjectDetailPage() {
           openTasks={openTasks} toggleOpen={toggleOpen} expandAllTasks={expandAllTasks} collapseAllTasks={collapseAllTasks}
           openComments={openComments} toggleComments={toggleComments} closeAllComments={closeAllComments}
           submitRemark={submitRemark} attachPhoto={attachPhoto}
+          updateRemark={updateRemark} deleteRemark={deleteRemark}
           toggleMilestone={toggleMilestone} deleteTask={deleteTask} patchTask={patchTask} patchStage={patchStage}
           addStage={addStage} deleteStage={deleteStage}
           addingTaskFor={addingTaskFor} setAddingTaskFor={setAddingTaskFor} addTask={addTask}
@@ -900,6 +901,8 @@ function PlanTab(props: {
   openTasks: Set<string>; toggleOpen: (id: string) => void; expandAllTasks: () => void; collapseAllTasks: () => void;
   openComments: Set<string>; toggleComments: (id: string) => void; closeAllComments: () => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
+  updateRemark: (commentId: string, text: string) => void;
+  deleteRemark: (commentId: string) => void;
   toggleMilestone: (t: PlanTask) => void; deleteTask: (id: string) => void; patchTask: (id: string, v: Partial<PlanTask>) => void; patchStage: (id: string, v: Partial<Stage>) => void;
   addStage: (name: string) => void; deleteStage: (id: string) => void;
   addingTaskFor: { stageId: string; parentId: string | null } | null; setAddingTaskFor: (v: { stageId: string; parentId: string | null } | null) => void;
@@ -936,6 +939,8 @@ function TaskTree(props: {
   openTasks: Set<string>; toggleOpen: (id: string) => void; expandAllTasks: () => void; collapseAllTasks: () => void;
   openComments: Set<string>; toggleComments: (id: string) => void; closeAllComments: () => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
+  updateRemark: (commentId: string, text: string) => void;
+  deleteRemark: (commentId: string) => void;
   toggleMilestone: (t: PlanTask) => void; deleteTask: (id: string) => void; patchTask: (id: string, v: Partial<PlanTask>) => void; patchStage: (id: string, v: Partial<Stage>) => void;
   addStage: (name: string) => void; deleteStage: (id: string) => void;
   addingTaskFor: { stageId: string; parentId: string | null } | null; setAddingTaskFor: (v: { stageId: string; parentId: string | null } | null) => void;
@@ -944,7 +949,7 @@ function TaskTree(props: {
 } & DragCtl) {
   const {
     stages, tasks, comments, openTasks, toggleOpen, expandAllTasks, collapseAllTasks,
-    openComments, toggleComments, closeAllComments, submitRemark, attachPhoto,
+    openComments, toggleComments, closeAllComments, submitRemark, attachPhoto, updateRemark, deleteRemark,
     toggleMilestone, deleteTask, patchTask, patchStage, addStage, deleteStage,
     addingTaskFor, setAddingTaskFor, addTask, taskView, setTaskView,
     dragging, hoverId, startDrag,
@@ -968,7 +973,7 @@ function TaskTree(props: {
       {taskView === "timeline" ? (
         <GanttView stages={stages} tasks={tasks} openTasks={openTasks} toggleOpen={toggleOpen}
           comments={comments} patchTask={patchTask} toggleMilestone={toggleMilestone} deleteTask={deleteTask}
-          submitRemark={submitRemark} attachPhoto={attachPhoto} />
+          submitRemark={submitRemark} attachPhoto={attachPhoto} updateRemark={updateRemark} deleteRemark={deleteRemark} />
       ) : (
       <div className="overflow-x-auto">
       <div className="border border-gray-200 rounded-xl overflow-hidden">
@@ -1007,7 +1012,7 @@ function TaskTree(props: {
               {openTasks.has(stage.id) && mainTasks.map(mt => (
                 <MainTaskRow key={mt.id} task={mt} subTasks={tasks.filter(t => t.parentId === mt.id)} comments={comments}
                   openTasks={openTasks} toggleOpen={toggleOpen} openComments={openComments} toggleComments={toggleComments}
-                  submitRemark={submitRemark} attachPhoto={attachPhoto}
+                  submitRemark={submitRemark} attachPhoto={attachPhoto} updateRemark={updateRemark} deleteRemark={deleteRemark}
                   toggleMilestone={toggleMilestone} deleteTask={deleteTask} patchTask={patchTask}
                   setAddingTaskFor={setAddingTaskFor} stageId={stage.id}
                   addingTaskFor={addingTaskFor} addTask={addTask}
@@ -1038,7 +1043,7 @@ function TaskTree(props: {
 
 // ── Gantt / Timeline view ────────────────────────────────────────────────
 
-function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, toggleMilestone, deleteTask, submitRemark, attachPhoto }: {
+function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, toggleMilestone, deleteTask, submitRemark, attachPhoto, updateRemark, deleteRemark }: {
   stages: Stage[]; tasks: PlanTask[]; openTasks: Set<string>; toggleOpen: (id: string) => void;
   comments: Comment[];
   patchTask: (id: string, v: Partial<PlanTask>) => void;
@@ -1046,6 +1051,8 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   deleteTask: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void;
   attachPhoto: (id: string) => void;
+  updateRemark: (commentId: string, text: string) => void;
+  deleteRemark: (commentId: string) => void;
 }) {
   const [focusMode, setFocusMode] = useState(false);
   const [showPast, setShowPast] = useState(false);
@@ -1316,6 +1323,8 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
           deleteTask={deleteTask}
           submitRemark={submitRemark}
           attachPhoto={attachPhoto}
+          updateRemark={updateRemark}
+          deleteRemark={deleteRemark}
         />
       )}
     </div>
@@ -1324,13 +1333,15 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
 
 function MainTaskRow({
   task, subTasks, comments, openTasks, toggleOpen, openComments, toggleComments,
-  submitRemark, attachPhoto, toggleMilestone, deleteTask, patchTask, setAddingTaskFor, stageId,
+  submitRemark, attachPhoto, updateRemark, deleteRemark, toggleMilestone, deleteTask, patchTask, setAddingTaskFor, stageId,
   addingTaskFor, addTask, dragging, hoverId, startDrag,
 }: {
   task: PlanTask; subTasks: PlanTask[]; comments: Comment[];
   openTasks: Set<string>; toggleOpen: (id: string) => void;
   openComments: Set<string>; toggleComments: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
+  updateRemark: (commentId: string, text: string) => void;
+  deleteRemark: (commentId: string) => void;
   toggleMilestone: (t: PlanTask) => void; deleteTask: (id: string) => void; patchTask: (id: string, v: Partial<PlanTask>) => void;
   setAddingTaskFor: (v: { stageId: string; parentId: string | null } | null) => void; stageId: string;
   addingTaskFor: { stageId: string; parentId: string | null } | null;
@@ -1368,13 +1379,13 @@ function MainTaskRow({
       </div>
 
       {openComments.has(task.id) && (
-        <CommentBox taskId={task.id} comments={taskComments} submitRemark={submitRemark} attachPhoto={() => attachPhoto(task.id)} indent={20} />
+        <CommentBox taskId={task.id} comments={taskComments} submitRemark={submitRemark} updateRemark={updateRemark} deleteRemark={deleteRemark} attachPhoto={() => attachPhoto(task.id)} indent={20} />
       )}
 
       {openTasks.has(task.id) && subTasks.map(st => (
         <SubTaskRow key={st.id} task={st} comments={comments.filter(c => c.taskId === st.id)}
           openComments={openComments} toggleComments={toggleComments}
-          submitRemark={submitRemark} attachPhoto={attachPhoto}
+          submitRemark={submitRemark} attachPhoto={attachPhoto} updateRemark={updateRemark} deleteRemark={deleteRemark}
           deleteTask={deleteTask} patchTask={patchTask}
           dragging={dragging} hoverId={hoverId} startDrag={startDrag} />
       ))}
@@ -1392,11 +1403,13 @@ function MainTaskRow({
 }
 
 function SubTaskRow({
-  task, comments, openComments, toggleComments, submitRemark, attachPhoto, deleteTask, patchTask,
+  task, comments, openComments, toggleComments, submitRemark, attachPhoto, updateRemark, deleteRemark, deleteTask, patchTask,
   dragging, hoverId, startDrag,
 }: {
   task: PlanTask; comments: Comment[]; openComments: Set<string>; toggleComments: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
+  updateRemark: (commentId: string, text: string) => void;
+  deleteRemark: (commentId: string) => void;
   deleteTask: (id: string) => void; patchTask: (id: string, v: Partial<PlanTask>) => void;
 } & DragCtl) {
   return (
@@ -1423,7 +1436,7 @@ function SubTaskRow({
         </div>
       </div>
       {openComments.has(task.id) && (
-        <CommentBox taskId={task.id} comments={comments} submitRemark={submitRemark} attachPhoto={() => attachPhoto(task.id)} indent={36} />
+        <CommentBox taskId={task.id} comments={comments} submitRemark={submitRemark} updateRemark={updateRemark} deleteRemark={deleteRemark} attachPhoto={() => attachPhoto(task.id)} indent={36} />
       )}
     </>
   );
@@ -1436,19 +1449,52 @@ function DateCell({ value, onChange, accent }: { value: string | null; onChange:
   );
 }
 
-function CommentBox({ taskId, comments, submitRemark, attachPhoto, indent }: {
-  taskId: string; comments: Comment[]; submitRemark: (taskId: string, text: string) => void; attachPhoto: () => void; indent: number;
+function CommentBox({ taskId, comments, submitRemark, updateRemark, deleteRemark, attachPhoto, indent }: {
+  taskId: string; comments: Comment[];
+  submitRemark: (taskId: string, text: string) => void;
+  updateRemark: (commentId: string, text: string) => void;
+  deleteRemark: (commentId: string) => void;
+  attachPhoto: () => void;
+  indent: number;
 }) {
   const [draft, setDraft] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
   const submit = () => { if (draft.trim()) { submitRemark(taskId, draft); setDraft(""); } };
+  const saveEdit = (commentId: string) => {
+    if (editingText.trim()) updateRemark(commentId, editingText.trim());
+    setEditingId(null); setEditingText("");
+  };
   return (
     <div className="bg-gray-50 border-b border-gray-100" style={{ paddingLeft: indent, paddingRight: 10 }}>
       <div className="border border-gray-200 rounded-lg overflow-hidden bg-white my-1.5">
         {comments.map(c => (
           <div key={c.id} className="px-3 py-2 border-b border-gray-100 last:border-none">
-            <p className="text-sm text-gray-400">{c.authorName} · {new Date(c.createdAt).toLocaleDateString()}</p>
-            {c.text && <p className="text-sm text-gray-700 mt-0.5">{c.text}</p>}
-            {c.imageUrl && <a href={c.imageUrl} target="_blank" className="text-sm text-blue-600 flex items-center gap-1 mt-1"><FileText className="w-3.5 h-3.5" /> Photo attached</a>}
+            <div className="flex items-center justify-between gap-2 mb-0.5">
+              <p className="text-sm text-gray-400">{c.authorName} · {new Date(c.createdAt).toLocaleDateString()}</p>
+              {editingId !== c.id && (
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button onClick={() => { setEditingId(c.id); setEditingText(c.text ?? ""); }} title="Edit" className="text-gray-300 hover:text-sky-500 transition-colors"><Pencil className="w-3 h-3" /></button>
+                  <button onClick={() => deleteRemark(c.id)} title="Delete" className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
+                </div>
+              )}
+            </div>
+            {editingId === c.id ? (
+              <div className="flex items-start gap-1.5">
+                <textarea autoFocus value={editingText} onChange={e => setEditingText(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(c.id); } if (e.key === "Escape") setEditingId(null); }}
+                  rows={1}
+                  onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
+                  className="flex-1 min-w-0 text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-sky-300 focus:outline-none resize-none overflow-hidden" />
+                <button onClick={() => saveEdit(c.id)} className="text-xs text-sky-600 font-semibold flex-shrink-0 mt-1.5">Save</button>
+                <button onClick={() => setEditingId(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0 mt-1.5"><X className="w-3 h-3" /></button>
+              </div>
+            ) : (
+              <>
+                {c.text && <p className="text-sm text-gray-700 mt-0.5">{c.text}</p>}
+                {c.imageUrl && <a href={c.imageUrl} target="_blank" className="text-sm text-blue-600 flex items-center gap-1 mt-1"><FileText className="w-3.5 h-3.5" /> Photo attached</a>}
+              </>
+            )}
           </div>
         ))}
         <div className="flex items-center gap-2 px-2.5 py-2 bg-gray-50">
@@ -1462,13 +1508,15 @@ function CommentBox({ taskId, comments, submitRemark, attachPhoto, indent }: {
   );
 }
 
-function TaskDetailModal({ task, comments, onClose, patchTask, toggleMilestone, deleteTask, submitRemark, attachPhoto }: {
+function TaskDetailModal({ task, comments, onClose, patchTask, toggleMilestone, deleteTask, submitRemark, attachPhoto, updateRemark, deleteRemark }: {
   task: PlanTask; comments: Comment[]; onClose: () => void;
   patchTask: (id: string, v: Partial<PlanTask>) => void;
   toggleMilestone: (t: PlanTask) => void;
   deleteTask: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void;
   attachPhoto: (id: string) => void;
+  updateRemark: (commentId: string, text: string) => void;
+  deleteRemark: (commentId: string) => void;
 }) {
   const taskComments = comments.filter(c => c.taskId === task.id);
   return (
@@ -1501,7 +1549,7 @@ function TaskDetailModal({ task, comments, onClose, patchTask, toggleMilestone, 
           className="ml-auto text-sm text-red-500 hover:underline flex items-center gap-1"><Trash2 className="w-3.5 h-3.5" /> Delete</button>
       </div>
       <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">Remarks</p>
-      <CommentBox taskId={task.id} comments={taskComments} submitRemark={submitRemark} attachPhoto={() => attachPhoto(task.id)} indent={0} />
+      <CommentBox taskId={task.id} comments={taskComments} submitRemark={submitRemark} updateRemark={updateRemark} deleteRemark={deleteRemark} attachPhoto={() => attachPhoto(task.id)} indent={0} />
     </Modal>
   );
 }
