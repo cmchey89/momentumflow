@@ -1418,6 +1418,7 @@ function SubTaskRow({
       <div data-drop-id={task.id} {...longPressHandlers(() => startDrag("task", task.id))}
         className={`grid grid-cols-[minmax(200px,1fr)_118px_118px_118px_118px_100px_100px] min-w-[1080px] gap-1 items-center pl-10 pr-2.5 py-1.5 border-b border-gray-100 select-none ${dragging?.id === task.id ? "opacity-40" : "bg-slate-50"} ${hoverId === task.id && dragging && dragging.id !== task.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}>
         <div className="flex items-center gap-1.5 min-w-0">
+          <button onClick={e => { e.stopPropagation(); toggleComments(task.id); }} className={`w-4 h-4 flex-shrink-0 flex items-center justify-center rounded transition-colors ${openComments.has(task.id) || comments.length ? "text-blue-500" : "text-gray-300 hover:text-blue-400"}`}><MessageSquare className="w-3.5 h-3.5" /></button>
           <CornerDownRight className="w-3.5 h-3.5 flex-shrink-0 text-gray-300" />
           <EditableName value={task.title} onSave={v => patchTask(task.id, { title: v })} className="text-[13px] text-gray-900 truncate" />
         </div>
@@ -1432,7 +1433,6 @@ function SubTaskRow({
           <option value="done">Done</option>
         </select>
         <div className="flex gap-1 justify-end">
-          <button onClick={() => toggleComments(task.id)} className={`w-5 h-5 border rounded flex items-center justify-center ${openComments.has(task.id) || comments.length ? "border-blue-400 text-blue-600 bg-blue-50" : "border-gray-200 text-gray-400"}`}><MessageSquare className="w-3 h-3" /></button>
           <button onClick={() => deleteTask(task.id)} className="w-5 h-5 border border-gray-200 rounded flex items-center justify-center text-gray-400 hover:border-red-300 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
         </div>
       </div>
