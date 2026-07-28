@@ -850,13 +850,13 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
         {notes.map(c => (
           <div key={c.id} className="rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-1.5" style={{ width: "50%" }}>
             {/* header row: author · date + edit/delete */}
-            <div className="flex items-center justify-between gap-2 mb-0.5">
+            <div className="flex items-center gap-2 mb-0.5">
               <span className="text-xs text-gray-400">{new Date(c.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}</span>
               {editMode && editingId !== c.id && (
-                <div className="flex items-center gap-1 flex-shrink-0">
+                <>
                   <button onClick={() => { setEditingId(c.id); setEditingText(c.text ?? ""); }} title="Edit" className="text-gray-300 hover:text-sky-500 transition-colors"><Pencil className="w-3 h-3" /></button>
                   <button onClick={() => deleteRemark(c.id)} title="Delete" className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
-                </div>
+                </>
               )}
             </div>
             {/* comment body */}
@@ -1469,13 +1469,13 @@ function CommentBox({ taskId, comments, submitRemark, updateRemark, deleteRemark
       <div className="border border-amber-200 rounded-lg overflow-hidden bg-white my-1.5">
         {comments.map(c => (
           <div key={c.id} className="px-3 py-2 border-b border-amber-50 last:border-none">
-            <div className="flex items-center justify-between gap-2 mb-0.5">
+            <div className="flex items-center gap-2 mb-0.5">
               <span className="text-xs text-amber-500">{new Date(c.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}</span>
               {editingId !== c.id && (
-                <div className="flex items-center gap-1 flex-shrink-0">
+                <>
                   <button onClick={() => { setEditingId(c.id); setEditingText(c.text ?? ""); }} title="Edit" className="text-amber-300 hover:text-amber-600 transition-colors"><Pencil className="w-3 h-3" /></button>
                   <button onClick={() => deleteRemark(c.id)} title="Delete" className="text-amber-300 hover:text-red-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
-                </div>
+                </>
               )}
             </div>
             {editingId === c.id ? (
