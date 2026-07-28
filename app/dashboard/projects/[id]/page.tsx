@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, Plus, ChevronRight, MessageSquare, Flag, Trash2,
-  Upload, Download, FileText, X, Pencil,
+  Upload, Download, FileText, X, Pencil, Layers, Square, CornerDownRight,
 } from "lucide-react";
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -143,6 +143,7 @@ const CLAIM_COLORS: Record<ClaimStatus, string> = {
   paid: "bg-green-100 text-green-700",
 };
 const STAGE_DOT: Record<StageStatus, string> = { pending: "bg-gray-300", in_progress: "bg-amber-500", done: "bg-green-600" };
+const STAGE_ICON_COLOR: Record<StageStatus, string> = { pending: "text-gray-400", in_progress: "text-amber-500", done: "text-green-600" };
 const TAB_LABELS: Record<"background" | "plan" | "finance", string> = {
   background: "Background", plan: "Plan", finance: "Finance",
 };
@@ -990,7 +991,7 @@ function TaskTree(props: {
                 onClick={() => toggleOpen(stage.id)}>
                 <div className="flex items-center gap-2 min-w-0">
                   <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 text-gray-500 transition-transform ${openTasks.has(stage.id) ? "rotate-90" : ""}`} />
-                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ring-2 ring-white ${STAGE_DOT[stage.status]}`} />
+                  <Layers className={`w-3.5 h-3.5 flex-shrink-0 ${STAGE_ICON_COLOR[stage.status]}`} />
                   <EditableName value={stage.name} onSave={v => patchStage(stage.id, { name: v })} className="text-[11px] font-extrabold text-gray-600 uppercase tracking-widest truncate" />
                 </div>
                 <span className="text-xs font-medium text-gray-400">{fmtDate(stage.planStart)}</span>
@@ -1356,7 +1357,7 @@ function MainTaskRow({
         onClick={() => hasChildren && toggleOpen(task.id)}>
         <div className="flex items-center gap-1.5 min-w-0">
           {hasChildren ? <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 text-blue-400 transition-transform ${openTasks.has(task.id) ? "rotate-90" : ""}`} /> : <span className="w-3.5 flex-shrink-0" />}
-          <span className={`w-2 h-2 rotate-45 flex-shrink-0 ${task.isMilestone ? "bg-purple-500" : "bg-blue-400"}`} />
+          <Square className={`w-3.5 h-3.5 flex-shrink-0 ${task.isMilestone ? "text-purple-500" : "text-blue-500"}`} />
           <EditableName value={task.title} onSave={v => patchTask(task.id, { title: v })} className="text-[13px] font-semibold text-gray-900 truncate" />
           {task.isMilestone && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full flex items-center gap-0.5 flex-shrink-0 font-semibold"><Flag className="w-2.5 h-2.5" /> Milestone</span>}
         </div>
@@ -1417,8 +1418,8 @@ function SubTaskRow({
       <div data-drop-id={task.id} {...longPressHandlers(() => startDrag("task", task.id))}
         className={`grid grid-cols-[minmax(200px,1fr)_118px_118px_118px_118px_100px_100px] min-w-[1080px] gap-1 items-center pl-10 pr-2.5 py-1.5 border-b border-gray-100 select-none ${dragging?.id === task.id ? "opacity-40" : "bg-slate-50"} ${hoverId === task.id && dragging && dragging.id !== task.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}>
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-gray-300 text-[11px] flex-shrink-0 leading-none select-none">↳</span>
-          <EditableName value={task.title} onSave={v => patchTask(task.id, { title: v })} className="text-xs text-gray-500 truncate" />
+          <CornerDownRight className="w-3.5 h-3.5 flex-shrink-0 text-gray-300" />
+          <EditableName value={task.title} onSave={v => patchTask(task.id, { title: v })} className="text-[13px] text-gray-900 truncate" />
         </div>
         <DateCell value={task.planStart} onChange={v => patchTask(task.id, { planStart: v })} small />
         <DateCell value={task.planEnd} onChange={v => patchTask(task.id, { planEnd: v })} small />
