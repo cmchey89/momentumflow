@@ -1092,12 +1092,12 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
     for (let i = 0; i <= totalDays; i++) {
       const d = new Date(rangeStart + i * 86400000);
       if (d.getUTCDay() === 6 || d.getUTCDay() === 0) {
-        weekendBands.push({ left: (i / totalDays) * 100, width: (1 / totalDays) * 100 });
+        weekendBands.push({ left: (i * 86400000 / span) * 100, width: (86400000 / span) * 100 });
       }
     }
   }
   const gridlinePcts = showDailyRuler
-    ? Array.from({ length: totalDays + 1 }, (_, i) => (i % 5 === 0 || i === totalDays) ? (i / totalDays) * 100 : null).filter((v): v is number => v !== null)
+    ? Array.from({ length: totalDays + 1 }, (_, i) => (i % 5 === 0 || i === totalDays) ? (i * 86400000 / span) * 100 : null).filter((v): v is number => v !== null)
     : tickDates.map((_, i) => (i / ticks) * 100);
 
   // RAG model: compare actual dates against planned dates, not today.
@@ -1308,7 +1308,7 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
                 {Array.from({ length: totalDays + 1 }, (_, i) => {
                   const d = new Date(rangeStart + i * 86400000);
                   const isMajor = i % 5 === 0 || i % 5 === 4 || i === totalDays;
-                  const leftPct = (i / totalDays) * 100;
+                  const leftPct = (i * 86400000 / span) * 100;
                   return (
                     <div key={i} className="absolute top-0" style={{ left: `${leftPct}%` }}>
                       <div className={isMajor ? "w-px h-2 bg-gray-400" : "w-px h-1 bg-gray-200"} />
