@@ -1058,6 +1058,7 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   const [showFuture, setShowFuture] = useState(false);
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const allDates: number[] = [];
   for (const s of stages) {
@@ -1070,41 +1071,41 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
     }
   }
   const today = Date.now();
+  // `today` is always included in the min/max spread below, so this stays well-defined
+  // even with zero task dates yet — no early return needed before the hooks further down.
+  const hasDates = allDates.length > 0;
 
-  if (allDates.length === 0) {
-    return <p className="text-sm text-gray-400 text-center py-12 border border-gray-200 rounded-xl">No planned dates yet — add plan start/end dates in Plan view to see the timeline.</p>;
-  }
-
-  // Snap to whole UTC days and pad one day either side, so bars never sit flush against
-  // the ruler edge and every day index maps to an exact percentage.
+  // Fixed pixel-per-day scale (rather than compressing the whole span into a fixed-width
+  // container) so a day is always the same width on screen whether the project runs 2 weeks
+  // or 7 years — long projects scroll horizontally instead of squeezing every label together.
   const DAY = 86400000;
+  const DAY_PX = 40;
   const dayFloor = (ms: number) => Math.floor(ms / DAY) * DAY;
   const rangeStart = dayFloor(Math.min(...allDates, today)) - DAY;
   const rangeEnd = dayFloor(Math.max(...allDates, today)) + DAY;
   const span = Math.max(rangeEnd - rangeStart, DAY);
-
-  const pct = (d: string | null) => d ? ((new Date(d).getTime() - rangeStart) / span) * 100 : null;
-  const todayPct = ((today - rangeStart) / span) * 100;
-
-  const ticks = 5;
-  const tickDates = Array.from({ length: ticks + 1 }, (_, i) => new Date(rangeStart + (span * i) / ticks));
   const totalDays = Math.round(span / DAY);
-  const showDailyRuler = totalDays <= 90; // beyond ~3 months, per-day ticks would be too dense to read
-  // Evenly spaced labels — a fixed day interval keeps the gap between labels proportional to elapsed time.
-  const labelStep = totalDays <= 12 ? 1 : totalDays <= 24 ? 2 : totalDays <= 45 ? 5 : totalDays <= 70 ? 7 : 14;
+  const timelineWidth = Math.max(totalDays * DAY_PX, 240);
+
+  const px = (d: string | null) => d ? ((new Date(d).getTime() - rangeStart) / DAY) * DAY_PX : null;
+  const todayPx = ((today - rangeStart) / DAY) * DAY_PX;
+
+  // Label spacing is a fixed day interval (not tied to how many days fit the container), so
+  // gaps stay legible and proportional regardless of total project length.
+  const labelStep = totalDays <= 7 ? 1 : totalDays <= 21 ? 2 : totalDays <= 60 ? 5 : totalDays <= 180 ? 14 : totalDays <= 730 ? 30 : 90;
+  // Per-day minor ticks / weekend shading only make sense once zoomed in close to daily granularity.
+  const showMinorTicks = labelStep <= 2;
 
   const weekendBands: { left: number; width: number }[] = [];
-  if (showDailyRuler) {
+  if (showMinorTicks) {
     for (let i = 0; i < totalDays; i++) {
       const d = new Date(rangeStart + i * DAY);
       if (d.getUTCDay() === 6 || d.getUTCDay() === 0) {
-        weekendBands.push({ left: (i * DAY / span) * 100, width: (DAY / span) * 100 });
+        weekendBands.push({ left: i * DAY_PX, width: DAY_PX });
       }
     }
   }
-  const gridlinePcts = showDailyRuler
-    ? Array.from({ length: totalDays + 1 }, (_, i) => i % labelStep === 0 ? (i * DAY / span) * 100 : null).filter((v): v is number => v !== null)
-    : tickDates.map((_, i) => (i / ticks) * 100);
+  const gridlinesPx = Array.from({ length: totalDays + 1 }, (_, i) => i % labelStep === 0 ? i * DAY_PX : null).filter((v): v is number => v !== null);
 
   // RAG model: compare actual dates against planned dates, not today.
   // actualEnd vs planEnd → if no actualEnd, use today as proxy for in-progress tasks.
@@ -1154,11 +1155,21 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   const futureStages = nextStageIdx >= 0 ? stages.slice(nextStageIdx + 1) : [];
   const activeStageIds = [currentEntry?.stage.id, nextEntry?.stage.id].filter((v, i, a): v is string => !!v && a.indexOf(v) === i);
 
+  // Default the visible window to ~4 weeks around today (or the current focus task),
+  // so a multi-year project opens on the relevant slice instead of its very first day.
+  const focusDate = currentEntry?.task.actualStart || currentEntry?.task.planStart || null;
+  const scrollTargetPx = focusDate ? px(focusDate) ?? todayPx : todayPx;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = Math.max(0, scrollTargetPx - 14 * DAY_PX);
+  }, [scrollTargetPx]);
+
   const renderDecorations = () => (
     <>
-      {weekendBands.map((b, i) => <div key={`w${i}`} className="absolute top-0 bottom-0 bg-gray-100/60" style={{ left: `${b.left}%`, width: `${b.width}%` }} />)}
-      {gridlinePcts.map((p, i) => <div key={`g${i}`} className="absolute top-0 bottom-0 w-px bg-gray-100" style={{ left: `${p}%` }} />)}
-      {todayPct >= 0 && todayPct <= 100 && <div className="absolute top-0 bottom-0 w-px bg-blue-500" style={{ left: `${todayPct}%` }} />}
+      {weekendBands.map((b, i) => <div key={`w${i}`} className="absolute top-0 bottom-0 bg-gray-100/60" style={{ left: `${b.left}px`, width: `${b.width}px` }} />)}
+      {gridlinesPx.map((p, i) => <div key={`g${i}`} className="absolute top-0 bottom-0 w-px bg-gray-100" style={{ left: `${p}px` }} />)}
+      {todayPx >= 0 && todayPx <= timelineWidth && <div className="absolute top-0 bottom-0 w-px bg-blue-500" style={{ left: `${todayPx}px` }} />}
     </>
   );
 
@@ -1170,8 +1181,8 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   const rows: Row[] = [];
 
   const pushTaskRows = (t: PlanTask, opts: { dim?: boolean; badge?: "current" | "next" }) => {
-    const planL = pct(t.planStart), planR = pct(t.planEnd);
-    const actL = pct(t.actualStart) ?? planL, actR = pct(t.actualEnd) ?? (t.status === "done" ? planR : (planL !== null ? Math.min(todayPct, 100) : null));
+    const planL = px(t.planStart), planR = px(t.planEnd);
+    const actL = px(t.actualStart) ?? planL, actR = px(t.actualEnd) ?? (t.status === "done" ? planR : (planL !== null ? Math.min(todayPx, timelineWidth) : null));
     const hasChildren = !t.parentId && tasks.some(x => x.parentId === t.id);
     const tooltip = `${t.title}\nPlan: ${fmtDate(t.planStart)} – ${fmtDate(t.planEnd)}\nActual: ${fmtDate(t.actualStart)} – ${fmtDate(t.actualEnd)}`;
     const dim = !!opts.dim;
@@ -1191,15 +1202,15 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
           {renderDecorations()}
           <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 bg-gray-100 rounded" />
           {planL !== null && planR !== null && (
-            <div className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded bg-gray-300" style={{ left: `${planL}%`, width: `${Math.max(planR - planL, 0.5)}%` }} />
+            <div className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded bg-gray-300" style={{ left: `${planL}px`, width: `${Math.max(planR - planL, 4)}px` }} />
           )}
           {actL !== null && actR !== null && (
-            <div className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded" style={{ left: `${actL}%`, width: `${Math.max(actR - actL, 0.5)}%`, background: barColor(t) }} />
+            <div className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded" style={{ left: `${actL}px`, width: `${Math.max(actR - actL, 4)}px`, background: barColor(t) }} />
           )}
           {actR !== null && (
             t.isMilestone
-              ? <div className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rotate-45 border-2 border-white shadow" style={{ left: `${actR}%`, background: barColor(t) }} />
-              : <div className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 border-white shadow" style={{ left: `${actR}%`, background: barColor(t) }} />
+              ? <div className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rotate-45 border-2 border-white shadow" style={{ left: `${actR}px`, background: barColor(t) }} />
+              : <div className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 border-white shadow" style={{ left: `${actR}px`, background: barColor(t) }} />
           )}
         </div>
       ),
@@ -1276,6 +1287,10 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
 
   const focusOptions: { taskId: string; stageName: string; title: string }[] = flatMainTasks.map(x => ({ taskId: x.task.id, stageName: x.stage.name, title: x.task.title }));
 
+  if (!hasDates) {
+    return <p className="text-sm text-gray-400 text-center py-12 border border-gray-200 rounded-xl">No planned dates yet — add plan start/end dates in Plan view to see the timeline.</p>;
+  }
+
   return (
     <div className="border border-gray-200 rounded-xl p-4">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -1304,35 +1319,28 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
 
       <div className="flex">
         <div className="flex-shrink-0 bg-white pr-2 flex flex-col gap-y-1.5 w-80">
-          <div className={showDailyRuler ? "h-7" : "h-4"} />
+          <div className="h-7" />
           {rows.map(r => <Fragment key={r.key}>{r.label}</Fragment>)}
         </div>
-        <div className="overflow-x-auto flex-1 min-w-0">
-          <div className="flex flex-col gap-y-1.5" style={{ minWidth: 560 }}>
-            {showDailyRuler ? (
-              <div className="relative h-7 text-[11px] text-gray-400">
-                {Array.from({ length: totalDays + 1 }, (_, i) => {
-                  const d = new Date(rangeStart + i * DAY);
-                  const isMajor = i % labelStep === 0;
-                  const leftPct = (i * DAY / span) * 100;
-                  // Edge labels anchor inward instead of centering, so they never spill past
-                  // the scroll container's boundary and get visually clipped.
-                  const anchor = i === 0 ? "left-0" : i === totalDays ? "right-0" : "left-1/2 -translate-x-1/2";
-                  return (
-                    <div key={i} className="absolute top-0" style={{ left: `${leftPct}%` }}>
-                      <div className={isMajor ? "w-px h-2 bg-gray-400" : "w-px h-1 bg-gray-200"} />
-                      {isMajor && <span className={`absolute top-2.5 ${anchor} whitespace-nowrap text-gray-500 font-medium`}>{d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="relative h-4 text-[11px] text-gray-400">
-                {tickDates.map((d, i) => (
-                  <span key={i} className="absolute -translate-x-1/2" style={{ left: `${(i / ticks) * 100}%` }}>{d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
-                ))}
-              </div>
-            )}
+        <div ref={scrollRef} className="overflow-x-auto flex-1 min-w-0">
+          <div className="flex flex-col gap-y-1.5" style={{ width: timelineWidth }}>
+            <div className="relative h-7 text-[11px] text-gray-400" style={{ width: timelineWidth }}>
+              {Array.from({ length: totalDays + 1 }, (_, i) => {
+                const isMajor = i % labelStep === 0;
+                if (!isMajor && !showMinorTicks) return null;
+                const d = new Date(rangeStart + i * DAY);
+                const leftPx = i * DAY_PX;
+                // Edge labels anchor inward instead of centering, so they never spill past
+                // the scroll container's boundary and get visually clipped.
+                const anchor = i === 0 ? "left-0" : i === totalDays ? "right-0" : "left-1/2 -translate-x-1/2";
+                return (
+                  <div key={i} className="absolute top-0" style={{ left: `${leftPx}px` }}>
+                    <div className={isMajor ? "w-px h-2 bg-gray-400" : "w-px h-1 bg-gray-200"} />
+                    {isMajor && <span className={`absolute top-2.5 ${anchor} whitespace-nowrap text-gray-500 font-medium`}>{d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: totalDays > 365 ? "2-digit" : undefined })}</span>}
+                  </div>
+                );
+              })}
+            </div>
             {rows.map(r => <Fragment key={r.key}>{r.bar}</Fragment>)}
           </div>
         </div>
