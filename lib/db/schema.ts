@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, pgEnum, boolean, integer, date } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, pgEnum, boolean, integer, date, numeric } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -94,6 +94,7 @@ export const projectBackground = pgTable("project_background", {
   poValue: integer("po_value"),
   targetStart: date("target_start"),
   targetEnd: date("target_end"),
+  markupPct: numeric("markup_pct", { precision: 5, scale: 2 }).default("0"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -149,6 +150,8 @@ export const taskComments = pgTable("task_comments", {
 });
 
 export const claimStatusEnum = pgEnum("claim_status", ["pending", "submitted", "approved", "paid"]);
+export const woTypeEnum = pgEnum("wo_type", ["original", "variation"]);
+export const woStatusEnum = pgEnum("wo_status", ["active", "superseded"]);
 
 export const contractors = pgTable("contractors", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -181,6 +184,57 @@ export const clientClaims = pgTable("client_claims", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ── Finance: Work Orders (Revenue) ────────────────────────────────────────
+
+export const workOrders = pgTable("work_orders", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  woNumber: text("wo_number").notNull(),
+  description: text("description"),
+  type: woTypeEnum("type").default("original").notNull(),
+  status: woStatusEnum("status").default("active").notNull(),
+  contractValue: numeric("contract_value", { precision: 12, scale: 2 }).notNull().default("0"),
+  issueDate: date("issue_date"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ── Finance: Contractor POs (Cost) ────────────────────────────────────────
+
+export const contractorPos = pgTable("contractor_pos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  contractorId: uuid("contractor_id").references(() => contractors.id, { onDelete: "cascade" }).notNull(),
+  poNumber: text("po_number").notNull(),
+  scope: text("scope"),
+  poValue: numeric("po_value", { precision: 12, scale: 2 }).notNull().default("0"),
+  issueDate: date("issue_date"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// PO Schedule of Values: each line item has unit, qty, rate, and completed qty for progress tracking.
+export const poLineItems = pgTable("po_line_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  poId: uuid("po_id").references(() => contractorPos.id, { onDelete: "cascade" }).notNull(),
+  description: text("description").notNull(),
+  unit: text("unit").notNull().default("pcs"),
+  totalQty: numeric("total_qty", { precision: 12, scale: 2 }).notNull().default("0"),
+  unitRate: numeric("unit_rate", { precision: 12, scale: 2 }).notNull().default("0"),
+  completedQty: numeric("completed_qty", { precision: 12, scale: 2 }).notNull().default("0"),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Each payment is a partial draw against the PO; running total determines remaining PO balance.
+export const poPayments = pgTable("po_payments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  poId: uuid("po_id").references(() => contractorPos.id, { onDelete: "cascade" }).notNull(),
+  paymentDate: date("payment_date"),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  invoiceRef: text("invoice_ref"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Reusable SOP templates: a snapshot of stage/main task/sub task structure, no project-specific dates.
 export const projectTemplates = pgTable("project_templates", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -188,5 +242,76 @@ export const projectTemplates = pgTable("project_templates", {
   team: text("team", { enum: ["network", "osp", "finance", "management"] }),
   structure: text("structure").notNull(), // JSON: { stages: [{ name, tasks: [{ title, isMilestone, durationDays, subTasks: [{title, durationDays}] }] }] }
   createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// ── Quotations: company-wide rate catalog + supplier costs, per-project quotations ─────
+
+// Money on this feature uses numeric(12,2) (cents-precision), unlike the whole-dollar
+// integers used elsewhere (poValue, claim amounts) — SOR/supplier rates need cents.
+export const rateSourceEnum = pgEnum("rate_source", ["sor", "unscheduled_sor"]);
+export const lineItemSourceEnum = pgEnum("line_item_source", ["sor", "unscheduled_sor", "adhoc"]);
+
+export const rateCategories = pgTable("rate_categories", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull().unique(),
+  markupPct: numeric("markup_pct", { precision: 5, scale: 2 }).notNull().default("0"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// SOR and Unscheduled SOR rates both live here, distinguished by `source` — one catalog
+// to cross-reference against when pricing a quotation line item.
+export const rateCatalogItems = pgTable("rate_catalog_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  source: rateSourceEnum("source").notNull(),
+  categoryId: uuid("category_id").references(() => rateCategories.id, { onDelete: "set null" }),
+  code: text("code").notNull(),
+  description: text("description").notNull(),
+  unit: text("unit").notNull(),
+  rate: numeric("rate", { precision: 12, scale: 2 }).notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const supplierCostItems = pgTable("supplier_cost_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  categoryId: uuid("category_id").references(() => rateCategories.id, { onDelete: "set null" }),
+  supplierName: text("supplier_name").notNull(),
+  description: text("description").notNull(),
+  unit: text("unit").notNull(),
+  cost: numeric("cost", { precision: 12, scale: 2 }).notNull(),
+  effectiveDate: date("effective_date"),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const quotations = pgTable("quotations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  quoteNumber: text("quote_number").notNull(),
+  client: text("client"),
+  quoteDate: date("quote_date"),
+  notes: text("notes"),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Line items snapshot description/unit/rate at the time they're added, with an optional
+// pointer back to the catalog/supplier source row for traceability — so a saved
+// quotation doesn't silently change if the catalog is edited later.
+export const quotationLineItems = pgTable("quotation_line_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  quotationId: uuid("quotation_id").references(() => quotations.id, { onDelete: "cascade" }).notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  source: lineItemSourceEnum("source").notNull(),
+  catalogItemId: uuid("catalog_item_id").references(() => rateCatalogItems.id, { onDelete: "set null" }),
+  supplierCostItemId: uuid("supplier_cost_item_id").references(() => supplierCostItems.id, { onDelete: "set null" }),
+  description: text("description").notNull(),
+  unit: text("unit").notNull(),
+  qty: numeric("qty", { precision: 12, scale: 2 }).notNull(),
+  unitRate: numeric("unit_rate", { precision: 12, scale: 2 }).notNull(),
+  markupPct: numeric("markup_pct", { precision: 5, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

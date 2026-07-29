@@ -18,6 +18,26 @@ interface Background {
   poValue: number | null;
   targetStart: string | null;
   targetEnd: string | null;
+  markupPct: string | null;
+}
+
+type WoType = "original" | "variation";
+type WoStatus = "active" | "superseded";
+interface WorkOrder {
+  id: string; woNumber: string; description: string | null;
+  type: WoType; status: WoStatus; contractValue: string; issueDate: string | null;
+}
+interface ContractorPo {
+  id: string; contractorId: string; poNumber: string; scope: string | null;
+  poValue: string; issueDate: string | null; contractorName: string;
+}
+interface PoLineItem {
+  id: string; poId: string; description: string; unit: string;
+  totalQty: string; unitRate: string; completedQty: string; sortOrder: number;
+}
+interface PoPayment {
+  id: string; poId: string; paymentDate: string | null;
+  amount: string; invoiceRef: string | null; notes: string | null;
 }
 interface ProjFile { id: string; name: string; url: string }
 
@@ -230,7 +250,7 @@ export default function ProjectDetailPage() {
   const [bg, setBg] = useState<Background | null>(null);
   const [files, setFiles] = useState<ProjFile[]>([]);
   const [editingBg, setEditingBg] = useState(false);
-  const [bgForm, setBgForm] = useState<Background>({ why: "", client: "", poNumber: "", poValue: null, targetStart: "", targetEnd: "" });
+  const [bgForm, setBgForm] = useState<Background>({ why: "", client: "", poNumber: "", poValue: null, targetStart: "", targetEnd: "", markupPct: "0" });
 
   // stages/tasks
   const [stages, setStages] = useState<Stage[]>([]);
@@ -244,12 +264,7 @@ export default function ProjectDetailPage() {
   const [hoverId, setHoverId] = useState<string | null>(null);
   const hoverIdRef = useRef<string | null>(null);
 
-  // finance
-  const [contractors, setContractors] = useState<Contractor[]>([]);
-  const [contractorClaims, setContractorClaims] = useState<ContractorClaim[]>([]);
-  const [clientClaims, setClientClaims] = useState<ClientClaim[]>([]);
-  const [showContractorForm, setShowContractorForm] = useState(false);
-  const [showClaimForm, setShowClaimForm] = useState<"client" | "contractor" | null>(null);
+  // finance state is self-contained inside FinanceTab
 
   // export/import
   const [showExport, setShowExport] = useState(false);
@@ -276,16 +291,10 @@ export default function ProjectDetailPage() {
     });
   }, [id]);
 
-  const loadFinance = useCallback(() => {
-    fetch(`/api/projects/${id}/finance`).then(r => r.json()).then(d => {
-      setContractors(d.contractors); setContractorClaims(d.contractorClaims); setClientClaims(d.clientClaims);
-    });
-  }, [id]);
-
   useEffect(() => {
     fetch(`/api/projects/${id}`).then(r => r.json()).then(setProject);
-    loadBackground(); loadStages(); loadFinance();
-  }, [id, loadBackground, loadStages, loadFinance]);
+    loadBackground(); loadStages();
+  }, [id, loadBackground, loadStages]);
 
   // ── Background handlers ──
   const saveBg = async () => {
@@ -490,20 +499,6 @@ export default function ProjectDetailPage() {
     setComments(prev => prev.map(c => c.id === tempId ? comment : c));
   };
 
-  // ── Finance handlers ──
-  const addContractor = async (name: string, scope: string) => {
-    await fetch(`/api/projects/${id}/finance`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "contractor", name, scope }) });
-    setShowContractorForm(false); loadFinance();
-  };
-  const addClaim = async (kind: "client" | "contractor", data: Record<string, unknown>) => {
-    await fetch(`/api/projects/${id}/finance`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: kind === "client" ? "client_claim" : "contractor_claim", ...data }) });
-    setShowClaimForm(null); loadFinance();
-  };
-  const setClaimStatus = async (kind: "client" | "contractor", claimId: string, status: ClaimStatus) => {
-    await fetch(`/api/finance/claims/${claimId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, status }) });
-    loadFinance();
-  };
-
   // ── Export/import ──
   const doExport = async (name: string, includeDurations: boolean, save: boolean) => {
     const res = await fetch(`/api/projects/${id}/export`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, includeDurations, save }) });
@@ -540,10 +535,6 @@ export default function ProjectDetailPage() {
     setShowBulkImport(false); loadStages();
     showToast(`Imported ${data.stagesCreated} stages, ${data.mainCreated} main tasks, ${data.subCreated} sub tasks`);
   };
-
-  const poValue = bg?.poValue ?? 0;
-  const clientTotal = clientClaims.reduce((s, c) => s + c.amount, 0);
-  const contractorTotal = contractorClaims.reduce((s, c) => s + c.amount, 0);
 
   return (
     <div className="p-8 max-w-[1920px] mx-auto">
@@ -602,12 +593,7 @@ export default function ProjectDetailPage() {
       )}
 
       {tab === "finance" && (
-        <FinanceTab
-          poValue={poValue} poNumber={bg?.poNumber ?? null} clientTotal={clientTotal} contractorTotal={contractorTotal}
-          stages={stages} contractors={contractors} contractorClaims={contractorClaims} clientClaims={clientClaims}
-          showContractorForm={showContractorForm} setShowContractorForm={setShowContractorForm} addContractor={addContractor}
-          showClaimForm={showClaimForm} setShowClaimForm={setShowClaimForm} addClaim={addClaim} setClaimStatus={setClaimStatus}
-        />
+        <FinanceTab projectId={id} bg={bg} />
       )}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} onExport={doExport} />}
@@ -1714,125 +1700,465 @@ function TaskDetailModal({ task, comments, onClose, patchTask, toggleMilestone, 
 
 // ── Finance Tab ─────────────────────────────────────────────────────────
 
-function FinanceTab({
-  poValue, poNumber, clientTotal, contractorTotal, stages, contractors, contractorClaims, clientClaims,
-  showContractorForm, setShowContractorForm, addContractor, showClaimForm, setShowClaimForm, addClaim, setClaimStatus,
-}: {
-  poValue: number; poNumber: string | null; clientTotal: number; contractorTotal: number;
-  stages: Stage[]; contractors: Contractor[]; contractorClaims: ContractorClaim[]; clientClaims: ClientClaim[];
-  showContractorForm: boolean; setShowContractorForm: (b: boolean) => void; addContractor: (name: string, scope: string) => void;
-  showClaimForm: "client" | "contractor" | null; setShowClaimForm: (v: "client" | "contractor" | null) => void;
-  addClaim: (kind: "client" | "contractor", data: Record<string, unknown>) => void;
-  setClaimStatus: (kind: "client" | "contractor", claimId: string, status: ClaimStatus) => void;
-}) {
-  const [conName, setConName] = useState(""); const [conScope, setConScope] = useState("");
-  const [claimAmount, setClaimAmount] = useState(""); const [claimStage, setClaimStage] = useState(""); const [claimContractor, setClaimContractor] = useState(""); const [claimInvoice, setClaimInvoice] = useState("");
+interface FinanceData {
+  workOrders: WorkOrder[];
+  contractors: Contractor[];
+  contractorPos: ContractorPo[];
+  lineItems: PoLineItem[];
+  payments: PoPayment[];
+}
 
-  const submitClaim = () => {
-    if (!showClaimForm || !claimAmount) return;
-    addClaim(showClaimForm, {
-      amount: claimAmount, stageId: claimStage || null, invoiceNo: claimInvoice || null,
-      contractorId: showClaimForm === "contractor" ? claimContractor : undefined,
+function FinanceTab({ projectId, bg }: {
+  projectId: string; bg: Background | null;
+}) {
+  const [data, setData] = useState<FinanceData | null>(null);
+  const [expandedPos, setExpandedPos] = useState<Set<string>>(new Set());
+  const [showWoForm, setShowWoForm] = useState(false);
+  const [showPoForm, setShowPoForm] = useState(false);
+  const [showLineItemForm, setShowLineItemForm] = useState<string | null>(null);
+  const [showPaymentForm, setShowPaymentForm] = useState<string | null>(null);
+  const [editingMarkup, setEditingMarkup] = useState(false);
+  const [markupInput, setMarkupInput] = useState(bg?.markupPct ?? "0");
+
+  const load = useCallback(() => {
+    fetch(`/api/projects/${projectId}/finance`).then(r => r.json()).then(setData);
+  }, [projectId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const wos = data?.workOrders ?? [];
+  const conPos = data?.contractorPos ?? [];
+  const lineItems = data?.lineItems ?? [];
+  const payments = data?.payments ?? [];
+  const contractors = data?.contractors ?? [];
+
+  const totalWoValue = wos.filter(w => w.status === "active").reduce((s, w) => s + Number(w.contractValue), 0);
+  const totalPoValue = conPos.reduce((s, p) => s + Number(p.poValue), 0);
+  const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
+  const markup = Number(bg?.markupPct ?? markupInput ?? 0);
+  const expectedRevenue = totalPoValue * (1 + markup / 100);
+  const margin = totalWoValue - totalPoValue;
+
+  const poPaymentsMap: Record<string, PoPayment[]> = {};
+  const poLineItemsMap: Record<string, PoLineItem[]> = {};
+  const poPaidMap: Record<string, number> = {};
+  for (const po of conPos) {
+    poPaymentsMap[po.id] = payments.filter(p => p.poId === po.id);
+    poLineItemsMap[po.id] = lineItems.filter(li => li.poId === po.id);
+    poPaidMap[po.id] = poPaymentsMap[po.id].reduce((s, p) => s + Number(p.amount), 0);
+  }
+
+  const togglePo = (id: string) =>
+    setExpandedPos(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const saveMarkup = async () => {
+    if (!bg) return;
+    await fetch(`/api/projects/${projectId}/background`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        why: bg.why, client: bg.client, poNumber: bg.poNumber,
+        poValue: bg.poValue, targetStart: bg.targetStart, targetEnd: bg.targetEnd,
+        markupPct: markupInput,
+      }),
     });
-    setClaimAmount(""); setClaimStage(""); setClaimContractor(""); setClaimInvoice("");
+    setEditingMarkup(false);
+  };
+
+  const postFinance = async (body: Record<string, unknown>) => {
+    await fetch(`/api/projects/${projectId}/finance`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    load();
+  };
+
+  const deleteWo = async (id: string) => {
+    if (!confirm("Delete this Work Order?")) return;
+    await fetch(`/api/finance/work-orders/${id}`, { method: "DELETE" }); load();
+  };
+  const patchWo = async (id: string, patch: Record<string, unknown>) => {
+    await fetch(`/api/finance/work-orders/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+    }); load();
+  };
+  const deletePo = async (id: string) => {
+    if (!confirm("Delete this PO and all its payments?")) return;
+    await fetch(`/api/finance/pos/${id}`, { method: "DELETE" }); load();
+  };
+  const patchLineItem = async (id: string, patch: Record<string, unknown>) => {
+    await fetch(`/api/finance/po-items/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+    }); load();
+  };
+  const deleteLineItem = async (id: string) => {
+    await fetch(`/api/finance/po-items/${id}`, { method: "DELETE" }); load();
+  };
+  const deletePayment = async (id: string) => {
+    await fetch(`/api/finance/po-payments/${id}`, { method: "DELETE" }); load();
   };
 
   return (
-    <div>
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <div className="bg-gray-50 rounded-xl p-3">
-          <p className="text-sm text-gray-400 mb-1">PO value</p>
-          <p className="text-lg font-semibold">{fmtMoney(poValue)}</p>
-          <p className="text-sm text-gray-400">{poNumber || "—"}</p>
+    <div className="space-y-6">
+      {/* Summary Strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Contract Value</p>
+          <p className="text-xl font-semibold text-gray-900 tabular-nums">{fmtMoney(totalWoValue)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{wos.filter(w => w.status === "active").length} active work order{wos.filter(w => w.status === "active").length !== 1 ? "s" : ""}</p>
         </div>
-        <div className="bg-gray-50 rounded-xl p-3">
-          <p className="text-sm text-gray-400 mb-1">Claimed to client</p>
-          <p className="text-lg font-semibold text-blue-600">{fmtMoney(clientTotal)}</p>
-          <p className="text-sm text-gray-400">{fmtMoney(Math.max(poValue - clientTotal, 0))} remaining</p>
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Total PO Cost</p>
+          <p className="text-xl font-semibold text-amber-600 tabular-nums">{fmtMoney(totalPoValue)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">Paid: {fmtMoney(totalPaid)}</p>
         </div>
-        <div className="bg-gray-50 rounded-xl p-3">
-          <p className="text-sm text-gray-400 mb-1">Contractor costs</p>
-          <p className="text-lg font-semibold text-amber-600">{fmtMoney(contractorTotal)}</p>
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Cost-Plus Revenue</p>
+          <p className="text-xl font-semibold text-blue-600 tabular-nums">{fmtMoney(Math.round(expectedRevenue))}</p>
+          <div className="flex items-center gap-1 mt-0.5">
+            {editingMarkup ? (
+              <span className="flex items-center gap-1">
+                <input type="number" value={markupInput} onChange={e => setMarkupInput(e.target.value)}
+                  className="w-14 text-xs border border-gray-300 rounded px-1.5 py-0.5" />
+                <span className="text-xs text-gray-400">%</span>
+                <button onClick={saveMarkup} className="text-xs text-blue-600 font-medium">Save</button>
+                <button onClick={() => setEditingMarkup(false)} className="text-xs text-gray-400">×</button>
+              </span>
+            ) : (
+              <button onClick={() => setEditingMarkup(true)} className="text-xs text-gray-400 hover:text-gray-600">
+                Markup: {markup}% ✎
+              </button>
+            )}
+          </div>
+        </div>
+        <div className={`rounded-xl p-4 border ${margin >= 0 ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+          <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Gross Margin</p>
+          <p className={`text-xl font-semibold tabular-nums ${margin >= 0 ? "text-green-700" : "text-red-700"}`}>{fmtMoney(margin)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {totalWoValue > 0 ? `${((margin / totalWoValue) * 100).toFixed(1)}%` : "—"}
+          </p>
         </div>
       </div>
 
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Your claims to client</p>
-        <button onClick={() => setShowClaimForm("client")} className="text-sm text-blue-600 flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Add claim</button>
-      </div>
-      <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden mb-6">
-        <thead><tr className="bg-gray-50 text-gray-400 text-sm uppercase"><th className="text-left px-3 py-1.5">Stage</th><th className="text-left px-3 py-1.5">Amount</th><th className="text-left px-3 py-1.5">Invoice</th><th className="text-left px-3 py-1.5">Status</th></tr></thead>
-        <tbody>
-          {clientClaims.map(c => (
-            <tr key={c.id} className="border-t border-gray-100">
-              <td className="px-3 py-1.5">{stages.find(s => s.id === c.stageId)?.name || "—"}</td>
-              <td className="px-3 py-1.5">{fmtMoney(c.amount)}</td>
-              <td className="px-3 py-1.5">{c.invoiceNo || "—"}</td>
-              <td className="px-3 py-1.5">
-                <select value={c.status} onChange={e => setClaimStatus("client", c.id, e.target.value as ClaimStatus)} className={`text-sm rounded-full px-2 py-0.5 border-none ${CLAIM_COLORS[c.status]}`}>
-                  {(["pending", "submitted", "approved", "paid"] as ClaimStatus[]).map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </td>
+      {/* Work Orders */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Revenue — Work Orders</h3>
+          <button onClick={() => setShowWoForm(true)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
+            <Plus className="w-3.5 h-3.5" /> Add Work Order
+          </button>
+        </div>
+        <table className="w-full text-sm border border-gray-200 rounded-xl overflow-hidden">
+          <thead>
+            <tr className="bg-gray-50 text-xs text-gray-400 uppercase tracking-wide">
+              <th className="text-left px-4 py-2">WO #</th>
+              <th className="text-left px-4 py-2">Description</th>
+              <th className="text-left px-4 py-2">Type</th>
+              <th className="text-left px-4 py-2">Status</th>
+              <th className="text-right px-4 py-2">Contract Value</th>
+              <th className="px-2 py-2 w-6"></th>
             </tr>
-          ))}
-          {clientClaims.length === 0 && <tr><td colSpan={4} className="px-3 py-3 text-center text-gray-400">No claims yet.</td></tr>}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {wos.map(wo => (
+              <tr key={wo.id} className="border-t border-gray-100 hover:bg-gray-50/50">
+                <td className="px-4 py-2 font-mono text-sm text-gray-700">{wo.woNumber}</td>
+                <td className="px-4 py-2 text-gray-700">{wo.description || "—"}</td>
+                <td className="px-4 py-2">
+                  <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${wo.type === "original" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700"}`}>
+                    {wo.type === "original" ? "Original" : "Variation"}
+                  </span>
+                </td>
+                <td className="px-4 py-2">
+                  <select value={wo.status} onChange={e => patchWo(wo.id, { status: e.target.value })}
+                    className={`text-xs rounded-full px-2 py-0.5 border-none outline-none cursor-pointer ${wo.status === "active" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                    <option value="active">Active</option>
+                    <option value="superseded">Superseded</option>
+                  </select>
+                </td>
+                <td className="px-4 py-2 text-right font-medium tabular-nums">{fmtMoney(Number(wo.contractValue))}</td>
+                <td className="px-2 py-2">
+                  <button onClick={() => deleteWo(wo.id)} className="text-gray-300 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
+                </td>
+              </tr>
+            ))}
+            {wos.length === 0 && (
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400 text-sm">No work orders yet.</td></tr>
+            )}
+          </tbody>
+          {wos.length > 0 && (
+            <tfoot>
+              <tr className="border-t border-gray-200 bg-gray-50">
+                <td colSpan={4} className="px-4 py-2 text-xs font-medium text-gray-500">Total active</td>
+                <td className="px-4 py-2 text-right font-semibold tabular-nums">{fmtMoney(totalWoValue)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
 
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Contractor claims</p>
-        <div className="flex gap-3">
-          <button onClick={() => setShowContractorForm(true)} className="text-sm text-blue-600 flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Add contractor</button>
-          <button onClick={() => setShowClaimForm("contractor")} className="text-sm text-blue-600 flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Add claim</button>
+      {/* Contractor POs */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Supplier / Contractor POs</h3>
+          <button onClick={() => setShowPoForm(true)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
+            <Plus className="w-3.5 h-3.5" /> Add PO
+          </button>
+        </div>
+        <div className="space-y-3">
+          {conPos.map(po => {
+            const paid = poPaidMap[po.id] ?? 0;
+            const balance = Number(po.poValue) - paid;
+            const items = poLineItemsMap[po.id] ?? [];
+            const poPays = poPaymentsMap[po.id] ?? [];
+            const isOpen = expandedPos.has(po.id);
+            return (
+              <div key={po.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                <div className="flex items-center gap-3 px-4 py-3 bg-white hover:bg-gray-50/50 cursor-pointer select-none"
+                  onClick={() => togglePo(po.id)}>
+                  <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform duration-150 ${isOpen ? "rotate-90" : ""}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-gray-900">{po.contractorName}</span>
+                      <span className="text-xs text-gray-400 font-mono bg-gray-100 px-1.5 py-0.5 rounded">{po.poNumber}</span>
+                      {po.scope && <span className="text-xs text-gray-500 truncate">{po.scope}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-5 text-sm shrink-0" onClick={e => e.stopPropagation()}>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400">PO Value</p>
+                      <p className="font-medium tabular-nums">{fmtMoney(Number(po.poValue))}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400">Paid</p>
+                      <p className="font-medium text-amber-600 tabular-nums">{fmtMoney(paid)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-400">Balance</p>
+                      <p className={`font-medium tabular-nums ${balance > 0 ? "text-gray-700" : "text-green-600"}`}>{fmtMoney(balance)}</p>
+                    </div>
+                    <button onClick={() => deletePo(po.id)} className="text-gray-300 hover:text-red-400 ml-1"><X className="w-3.5 h-3.5" /></button>
+                  </div>
+                </div>
+
+                {isOpen && (
+                  <div className="border-t border-gray-100 bg-gray-50/30 px-4 py-4 space-y-5">
+                    {/* Schedule of Values */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Schedule of Values</p>
+                        <button onClick={() => setShowLineItemForm(po.id)} className="text-xs text-blue-600 flex items-center gap-0.5 hover:text-blue-700">
+                          <Plus className="w-3 h-3" /> Add item
+                        </button>
+                      </div>
+                      {items.length > 0 ? (
+                        <table className="w-full text-sm bg-white border border-gray-100 rounded-lg overflow-hidden">
+                          <thead>
+                            <tr className="text-xs text-gray-400 bg-gray-50">
+                              <th className="text-left px-3 py-1.5">Description</th>
+                              <th className="text-left px-3 py-1.5">Unit</th>
+                              <th className="text-right px-3 py-1.5">Rate</th>
+                              <th className="text-right px-3 py-1.5">Total Qty</th>
+                              <th className="text-right px-3 py-1.5">Done Qty</th>
+                              <th className="text-right px-3 py-1.5">Total Value</th>
+                              <th className="text-right px-3 py-1.5">Remaining</th>
+                              <th className="w-6 px-2 py-1.5"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {items.map(li => {
+                              const totalVal = Number(li.totalQty) * Number(li.unitRate);
+                              const doneVal = Number(li.completedQty) * Number(li.unitRate);
+                              const remaining = totalVal - doneVal;
+                              const pct = Number(li.totalQty) > 0 ? (Number(li.completedQty) / Number(li.totalQty)) * 100 : 0;
+                              return (
+                                <tr key={li.id} className="border-t border-gray-50">
+                                  <td className="px-3 py-1.5 text-gray-700">{li.description}</td>
+                                  <td className="px-3 py-1.5 text-gray-500 text-xs">{li.unit}</td>
+                                  <td className="px-3 py-1.5 text-right tabular-nums">{fmtMoney(Number(li.unitRate))}</td>
+                                  <td className="px-3 py-1.5 text-right tabular-nums">{Number(li.totalQty).toLocaleString()}</td>
+                                  <td className="px-3 py-1.5 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <input type="number" defaultValue={li.completedQty}
+                                        className="w-16 text-xs text-right border border-gray-200 rounded px-1.5 py-0.5"
+                                        onBlur={e => { if (e.target.value !== li.completedQty) patchLineItem(li.id, { completedQty: e.target.value }); }} />
+                                      <span className="text-xs text-gray-400 w-8 text-right">{pct.toFixed(0)}%</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{fmtMoney(Math.round(totalVal))}</td>
+                                  <td className="px-3 py-1.5 text-right tabular-nums text-amber-600">{fmtMoney(Math.round(remaining))}</td>
+                                  <td className="px-2 py-1.5">
+                                    <button onClick={() => deleteLineItem(li.id)} className="text-gray-200 hover:text-red-400"><X className="w-3 h-3" /></button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <p className="text-xs text-gray-400 py-1.5">No items yet. Add scope items to track physical progress.</p>
+                      )}
+                    </div>
+
+                    {/* Progress Payments */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Progress Payments</p>
+                        <button onClick={() => setShowPaymentForm(po.id)} className="text-xs text-blue-600 flex items-center gap-0.5 hover:text-blue-700">
+                          <Plus className="w-3 h-3" /> Add payment
+                        </button>
+                      </div>
+                      {poPays.length > 0 ? (
+                        <table className="w-full text-sm bg-white border border-gray-100 rounded-lg overflow-hidden">
+                          <thead>
+                            <tr className="text-xs text-gray-400 bg-gray-50">
+                              <th className="text-left px-3 py-1.5">Date</th>
+                              <th className="text-left px-3 py-1.5">Invoice Ref</th>
+                              <th className="text-left px-3 py-1.5">Notes</th>
+                              <th className="text-right px-3 py-1.5">Amount</th>
+                              <th className="w-6 px-2 py-1.5"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {poPays.map(pay => (
+                              <tr key={pay.id} className="border-t border-gray-50">
+                                <td className="px-3 py-1.5 text-gray-600">{pay.paymentDate || "—"}</td>
+                                <td className="px-3 py-1.5 font-mono text-xs text-gray-600">{pay.invoiceRef || "—"}</td>
+                                <td className="px-3 py-1.5 text-xs text-gray-500">{pay.notes || "—"}</td>
+                                <td className="px-3 py-1.5 text-right font-medium tabular-nums">{fmtMoney(Number(pay.amount))}</td>
+                                <td className="px-2 py-1.5">
+                                  <button onClick={() => deletePayment(pay.id)} className="text-gray-200 hover:text-red-400"><X className="w-3 h-3" /></button>
+                                </td>
+                              </tr>
+                            ))}
+                            <tr className="border-t border-gray-200 bg-gray-50">
+                              <td colSpan={3} className="px-3 py-1.5 text-xs font-medium text-gray-500">Total paid</td>
+                              <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{fmtMoney(paid)}</td>
+                              <td></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      ) : (
+                        <p className="text-xs text-gray-400 py-1.5">No payments recorded yet.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {conPos.length === 0 && (
+            <div className="border border-dashed border-gray-200 rounded-xl py-10 text-center text-gray-400 text-sm">
+              No contractor POs yet.
+            </div>
+          )}
         </div>
       </div>
-      <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-        <thead><tr className="bg-gray-50 text-gray-400 text-sm uppercase"><th className="text-left px-3 py-1.5">Contractor</th><th className="text-left px-3 py-1.5">Scope</th><th className="text-left px-3 py-1.5">Stage</th><th className="text-left px-3 py-1.5">Amount</th><th className="text-left px-3 py-1.5">Invoice</th><th className="text-left px-3 py-1.5">Status</th></tr></thead>
-        <tbody>
-          {contractorClaims.map(c => (
-            <tr key={c.id} className="border-t border-gray-100">
-              <td className="px-3 py-1.5">{contractors.find(k => k.id === c.contractorId)?.name || "—"}</td>
-              <td className="px-3 py-1.5">{contractors.find(k => k.id === c.contractorId)?.scope || "—"}</td>
-              <td className="px-3 py-1.5">{stages.find(s => s.id === c.stageId)?.name || "—"}</td>
-              <td className="px-3 py-1.5">{fmtMoney(c.amount)}</td>
-              <td className="px-3 py-1.5">{c.invoiceNo || "—"}</td>
-              <td className="px-3 py-1.5">
-                <select value={c.status} onChange={e => setClaimStatus("contractor", c.id, e.target.value as ClaimStatus)} className={`text-sm rounded-full px-2 py-0.5 border-none ${CLAIM_COLORS[c.status]}`}>
-                  {(["pending", "submitted", "approved", "paid"] as ClaimStatus[]).map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </td>
-            </tr>
-          ))}
-          {contractorClaims.length === 0 && <tr><td colSpan={6} className="px-3 py-3 text-center text-gray-400">No claims yet.</td></tr>}
-        </tbody>
-      </table>
 
-      {showContractorForm && (
-        <Modal title="Add contractor" onClose={() => setShowContractorForm(false)}>
-          <input value={conName} onChange={e => setConName(e.target.value)} placeholder="Contractor name" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
-          <input value={conScope} onChange={e => setConScope(e.target.value)} placeholder="Scope (e.g. Cabling)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-3" />
-          <button onClick={() => { addContractor(conName, conScope); setConName(""); setConScope(""); }} className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg">Add</button>
+      {showWoForm && (
+        <Modal title="Add Work Order" onClose={() => setShowWoForm(false)}>
+          <AddWoForm onSave={b => { postFinance({ kind: "work_order", ...b }); setShowWoForm(false); }} />
         </Modal>
       )}
-
-      {showClaimForm && (
-        <Modal title={showClaimForm === "client" ? "Add client claim" : "Add contractor claim"} onClose={() => setShowClaimForm(null)}>
-          {showClaimForm === "contractor" && (
-            <select value={claimContractor} onChange={e => setClaimContractor(e.target.value)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2">
-              <option value="">Select contractor…</option>
-              {contractors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          )}
-          <select value={claimStage} onChange={e => setClaimStage(e.target.value)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2">
-            <option value="">Stage (optional)…</option>
-            {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <input type="number" value={claimAmount} onChange={e => setClaimAmount(e.target.value)} placeholder="Amount ($)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
-          <input value={claimInvoice} onChange={e => setClaimInvoice(e.target.value)} placeholder="Invoice no. (optional)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-3" />
-          <button onClick={submitClaim} className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg">Add claim</button>
+      {showPoForm && (
+        <Modal title="Add Contractor PO" onClose={() => setShowPoForm(false)}>
+          <AddPoForm contractors={contractors} onSave={b => { postFinance({ kind: "contractor_po", ...b }); setShowPoForm(false); }} />
+        </Modal>
+      )}
+      {showLineItemForm && (
+        <Modal title="Add Line Item" onClose={() => setShowLineItemForm(null)}>
+          <AddLineItemForm onSave={b => { postFinance({ kind: "po_line_item", poId: showLineItemForm, ...b }); setShowLineItemForm(null); }} />
+        </Modal>
+      )}
+      {showPaymentForm && (
+        <Modal title="Add Payment" onClose={() => setShowPaymentForm(null)}>
+          <AddPaymentForm onSave={b => { postFinance({ kind: "po_payment", poId: showPaymentForm, ...b }); setShowPaymentForm(null); }} />
         </Modal>
       )}
     </div>
+  );
+}
+
+function AddWoForm({ onSave }: { onSave: (b: Record<string, unknown>) => void }) {
+  const [woNumber, setWoNumber] = useState("");
+  const [description, setDescription] = useState("");
+  const [type, setType] = useState<WoType>("original");
+  const [contractValue, setContractValue] = useState("");
+  const [issueDate, setIssueDate] = useState("");
+  return (
+    <>
+      <input value={woNumber} onChange={e => setWoNumber(e.target.value)} placeholder="WO number (e.g. WO-001)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <select value={type} onChange={e => setType(e.target.value as WoType)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2">
+        <option value="original">Original</option>
+        <option value="variation">Variation Order</option>
+      </select>
+      <input type="number" value={contractValue} onChange={e => setContractValue(e.target.value)} placeholder="Contract value ($)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-3" />
+      <button onClick={() => { if (woNumber && contractValue) onSave({ woNumber, description: description || null, type, contractValue, issueDate: issueDate || null }); }}
+        className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg w-full">Add Work Order</button>
+    </>
+  );
+}
+
+function AddPoForm({ contractors, onSave }: { contractors: Contractor[]; onSave: (b: Record<string, unknown>) => void }) {
+  const [contractorId, setContractorId] = useState("");
+  const [newName, setNewName] = useState("");
+  const [poNumber, setPoNumber] = useState("");
+  const [scope, setScope] = useState("");
+  const [poValue, setPoValue] = useState("");
+  const [issueDate, setIssueDate] = useState("");
+  return (
+    <>
+      <p className="text-xs text-gray-500 mb-1">Select existing contractor or enter a new name</p>
+      <select value={contractorId} onChange={e => setContractorId(e.target.value)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2">
+        <option value="">— New contractor —</option>
+        {contractors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+      {!contractorId && <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="New contractor name" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />}
+      <input value={poNumber} onChange={e => setPoNumber(e.target.value)} placeholder="PO number (e.g. PO-001)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <input value={scope} onChange={e => setScope(e.target.value)} placeholder="Scope description" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <input type="number" value={poValue} onChange={e => setPoValue(e.target.value)} placeholder="PO value ($)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-3" />
+      <button onClick={() => { if (poNumber && poValue && (contractorId || newName)) onSave({ contractorId: contractorId || null, contractorName: contractorId ? null : newName, poNumber, scope: scope || null, poValue, issueDate: issueDate || null }); }}
+        className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg w-full">Add PO</button>
+    </>
+  );
+}
+
+function AddLineItemForm({ onSave }: { onSave: (b: Record<string, unknown>) => void }) {
+  const [description, setDescription] = useState("");
+  const [unit, setUnit] = useState("pcs");
+  const [totalQty, setTotalQty] = useState("");
+  const [unitRate, setUnitRate] = useState("");
+  return (
+    <>
+      <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (e.g. Cable installation)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <div className="flex gap-2 mb-2">
+        <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="Unit (m, m², pcs)" className="w-24 text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
+        <input type="number" value={totalQty} onChange={e => setTotalQty(e.target.value)} placeholder="Total qty" className="flex-1 text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
+      </div>
+      <input type="number" value={unitRate} onChange={e => setUnitRate(e.target.value)} placeholder="Unit rate ($)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-3" />
+      <button onClick={() => { if (description && totalQty && unitRate) onSave({ description, unit, totalQty, unitRate, completedQty: "0" }); }}
+        className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg w-full">Add Item</button>
+    </>
+  );
+}
+
+function AddPaymentForm({ onSave }: { onSave: (b: Record<string, unknown>) => void }) {
+  const [amount, setAmount] = useState("");
+  const [paymentDate, setPaymentDate] = useState("");
+  const [invoiceRef, setInvoiceRef] = useState("");
+  const [notes, setNotes] = useState("");
+  return (
+    <>
+      <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Payment amount ($)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <input value={invoiceRef} onChange={e => setInvoiceRef(e.target.value)} placeholder="Invoice reference" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optional)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-3" />
+      <button onClick={() => { if (amount) onSave({ amount, paymentDate: paymentDate || null, invoiceRef: invoiceRef || null, notes: notes || null }); }}
+        className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg w-full">Record Payment</button>
+    </>
   );
 }
 
