@@ -1072,7 +1072,10 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
       if (d) allDates.push(new Date(d).getTime());
     }
   }
-  const today = Date.now();
+  // Frozen for the component's lifetime rather than re-read on every render — otherwise
+  // any derived value built from "today" (e.g. the auto-scroll target) looks like a new
+  // number on every render and retriggers effects that depend on it.
+  const [today] = useState(() => Date.now());
   // `today` is always included in the min/max spread below, so this stays well-defined
   // even with zero task dates yet — no early return needed before the hooks further down.
   const hasDates = allDates.length > 0;
@@ -1177,7 +1180,11 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
     const el = scrollRef.current;
     if (!el) return;
     el.scrollLeft = Math.max(0, scrollTargetPx - 14 * DAY_PX);
-  }, [scrollTargetPx]);
+    // Re-center only when the focused task actually changes (or on mount) — depending on
+    // the computed pixel value directly would re-run on every render and fight the user's
+    // own scrolling/dragging.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveCurrentTaskId]);
 
   // Explicit pan controls — the native horizontal scrollbar sits below every row, which is
   // easy to lose track of once a project has more than a screenful of tasks.
