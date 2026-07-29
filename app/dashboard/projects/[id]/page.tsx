@@ -1102,13 +1102,14 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   const todayPx = ((today - rangeStart) / DAY) * DAY_PX;
 
   // Label spacing is a fixed day interval (not tied to how many days fit the container), so
-  // gaps stay legible and proportional regardless of total project length.
-  const labelStep = totalDays <= 7 ? 1 : totalDays <= 21 ? 2 : totalDays <= 60 ? 5 : totalDays <= 180 ? 14 : totalDays <= 730 ? 30 : 90;
-  // Per-day minor ticks / weekend shading only make sense once zoomed in close to daily granularity.
-  const showMinorTicks = labelStep <= 2;
+  // gaps stay legible and proportional regardless of total project length. Every day gets its
+  // own label up to ~3 months; beyond that daily labels would just overlap into noise.
+  const labelStep = totalDays <= 90 ? 1 : totalDays <= 180 ? 7 : totalDays <= 730 ? 30 : 90;
+  // Weekend shading / weekday names only make sense once zoomed in enough to show every day.
+  const showDaily = labelStep === 1;
 
   const weekendBands: { left: number; width: number }[] = [];
-  if (showMinorTicks) {
+  if (showDaily) {
     for (let i = 0; i < totalDays; i++) {
       const d = new Date(rangeStart + i * DAY);
       if (d.getUTCDay() === 6 || d.getUTCDay() === 0) {
@@ -1326,24 +1327,30 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
 
       <div className="flex">
         <div className="flex-shrink-0 bg-white pr-2 flex flex-col gap-y-1.5 w-80">
-          <div className="h-7" />
+          <div className={showDaily ? "h-10" : "h-7"} />
           {rows.map(r => <Fragment key={r.key}>{r.label}</Fragment>)}
         </div>
         <div ref={scrollRef} className="overflow-x-auto flex-1 min-w-0">
           <div className="flex flex-col gap-y-1.5" style={{ width: timelineWidth }}>
-            <div className="relative h-7 text-[11px] text-gray-400" style={{ width: timelineWidth }}>
+            <div className={`relative text-[11px] text-gray-400 ${showDaily ? "h-10" : "h-7"}`} style={{ width: timelineWidth }}>
               {Array.from({ length: totalDays + 1 }, (_, i) => {
                 const isMajor = i % labelStep === 0;
-                if (!isMajor && !showMinorTicks) return null;
+                if (!isMajor) return null;
                 const d = new Date(rangeStart + i * DAY);
+                const dow = d.getUTCDay();
+                const isWeekend = dow === 0 || dow === 6;
                 const leftPx = i * DAY_PX;
                 // Edge labels anchor inward instead of centering, so they never spill past
                 // the scroll container's boundary and get visually clipped.
                 const anchor = i === 0 ? "left-0" : i === totalDays ? "right-0" : "left-1/2 -translate-x-1/2";
+                const colorCls = isWeekend ? "text-gray-300" : "text-gray-500";
                 return (
                   <div key={i} className="absolute top-0" style={{ left: `${leftPx}px` }}>
-                    <div className={isMajor ? "w-px h-2 bg-gray-400" : "w-px h-1 bg-gray-200"} />
-                    {isMajor && <span className={`absolute top-2.5 ${anchor} whitespace-nowrap text-gray-500 font-medium`}>{d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: totalDays > 365 ? "2-digit" : undefined })}</span>}
+                    <div className="w-px h-2 bg-gray-400" />
+                    <div className={`absolute top-2.5 ${anchor} whitespace-nowrap text-center leading-tight`}>
+                      {showDaily && <div className={`text-[9px] font-semibold ${colorCls}`}>{d.toLocaleDateString("en-GB", { weekday: "short" })}</div>}
+                      <div className={`font-medium ${colorCls}`}>{d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: totalDays > 365 ? "2-digit" : undefined })}</div>
+                    </div>
                   </div>
                 );
               })}
