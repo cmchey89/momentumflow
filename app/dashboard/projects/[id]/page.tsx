@@ -1081,8 +1081,11 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   const DAY = 86400000;
   const DAY_PX = 40;
   const dayFloor = (ms: number) => Math.floor(ms / DAY) * DAY;
-  const rangeStart = dayFloor(Math.min(...allDates, today)) - DAY;
-  const rangeEnd = dayFloor(Math.max(...allDates, today)) + DAY;
+  // With no dates plotted yet, default to a 4-week window centered on today instead of
+  // collapsing to a 1-day sliver — so the ruler is still useful while the first stage
+  // is being planned.
+  const rangeStart = hasDates ? dayFloor(Math.min(...allDates, today)) - DAY : dayFloor(today) - 14 * DAY;
+  const rangeEnd = hasDates ? dayFloor(Math.max(...allDates, today)) + DAY : dayFloor(today) + 14 * DAY;
   const span = Math.max(rangeEnd - rangeStart, DAY);
   const totalDays = Math.round(span / DAY);
   const timelineWidth = Math.max(totalDays * DAY_PX, 240);
@@ -1286,10 +1289,6 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   }
 
   const focusOptions: { taskId: string; stageName: string; title: string }[] = flatMainTasks.map(x => ({ taskId: x.task.id, stageName: x.stage.name, title: x.task.title }));
-
-  if (!hasDates) {
-    return <p className="text-sm text-gray-400 text-center py-12 border border-gray-200 rounded-xl">No planned dates yet — add plan start/end dates in Plan view to see the timeline.</p>;
-  }
 
   return (
     <div className="border border-gray-200 rounded-xl p-4">
