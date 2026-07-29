@@ -144,6 +144,53 @@ const CLAIM_COLORS: Record<ClaimStatus, string> = {
 };
 const STAGE_DOT: Record<StageStatus, string> = { pending: "bg-gray-300", in_progress: "bg-amber-500", done: "bg-green-600" };
 const STAGE_ICON_COLOR: Record<StageStatus, string> = { pending: "text-gray-400", in_progress: "text-amber-500", done: "text-green-600" };
+const STAGE_BORDER: Record<StageStatus, string> = { pending: "border-l-gray-300", in_progress: "border-l-amber-400", done: "border-l-green-500" };
+
+// RAG model shared by the List view and the Gantt chart: compare actual dates against
+// planned dates (not just "today") so a task that finished late still reads as delayed.
+type RiskLevel = "risk" | "warning" | "ontrack";
+const RISK_HEX = { risk: "#DC2626", warning: "#F59E0B", ontrack: "#16A34A" } as const;
+const RISK_WEEK_MS = 7 * 86400000;
+function taskRiskOf(t: PlanTask, today: number): RiskLevel {
+  const planEndMs = t.planEnd ? new Date(t.planEnd).getTime() : null;
+  const planStartMs = t.planStart ? new Date(t.planStart).getTime() : null;
+  if (t.actualEnd) {
+    if (planEndMs === null) return "ontrack";
+    const delta = new Date(t.actualEnd).getTime() - planEndMs;
+    if (delta > RISK_WEEK_MS) return "risk";
+    if (delta > 0) return "warning";
+    return "ontrack";
+  }
+  if (t.status === "done") return "ontrack";
+  if (t.status === "in_progress" || t.actualStart) {
+    if (planEndMs === null) return "ontrack";
+    const delta = today - planEndMs;
+    if (delta > RISK_WEEK_MS) return "risk";
+    if (delta > 0) return "warning";
+    return "ontrack";
+  }
+  // Pending — flag if overdue to start
+  if (planStartMs !== null && planStartMs < today) {
+    const delta = today - planStartMs;
+    if (delta > RISK_WEEK_MS) return "risk";
+    return "warning";
+  }
+  return "ontrack";
+}
+// Status pill styling for the List view — folds schedule risk into the status control itself,
+// so "behind schedule" is visible at a glance instead of only inside the Gantt chart.
+const STATUS_PILL: Record<string, string> = {
+  done: "bg-green-50 border-green-300 text-green-700",
+  "in_progress:risk": "bg-red-50 border-red-300 text-red-700",
+  "in_progress:warning": "bg-amber-50 border-amber-300 text-amber-700",
+  "in_progress:ontrack": "bg-blue-50 border-blue-300 text-blue-700",
+  "pending:risk": "bg-red-50 border-red-300 text-red-700",
+  "pending:warning": "bg-amber-50 border-amber-300 text-amber-700",
+  "pending:ontrack": "bg-gray-50 border-gray-300 text-gray-600",
+};
+function statusPillClass(t: PlanTask, today: number): string {
+  return t.status === "done" ? STATUS_PILL.done : STATUS_PILL[`${t.status}:${taskRiskOf(t, today)}`];
+}
 const TAB_LABELS: Record<"background" | "plan" | "finance", string> = {
   background: "Background", plan: "Plan", finance: "Finance",
 };
@@ -953,15 +1000,16 @@ function TaskTree(props: {
     addingTaskFor, setAddingTaskFor, addTask, taskView, setTaskView,
     dragging, hoverId, startDrag,
   } = props;
+  const today = Date.now();
 
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
         <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">Task breakdown</p>
         <div className="flex items-center gap-3">
-          <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm">
-            <button onClick={() => setTaskView("list")} className={`px-2.5 py-1 ${taskView === "list" ? "bg-gray-100 font-medium text-gray-900" : "text-gray-400"}`}>List</button>
-            <button onClick={() => setTaskView("timeline")} className={`px-2.5 py-1 border-l border-gray-200 ${taskView === "timeline" ? "bg-gray-100 font-medium text-gray-900" : "text-gray-400"}`}>Timeline</button>
+          <div className="flex border border-gray-300 rounded-lg overflow-hidden text-sm">
+            <button onClick={() => setTaskView("list")} className={`px-2.5 py-1 ${taskView === "list" ? "bg-gray-900 font-medium text-white" : "text-gray-400 hover:bg-gray-50"}`}>List</button>
+            <button onClick={() => setTaskView("timeline")} className={`px-2.5 py-1 border-l border-gray-300 ${taskView === "timeline" ? "bg-gray-900 font-medium text-white" : "text-gray-400 hover:bg-gray-50"}`}>Timeline</button>
           </div>
           <button onClick={expandAllTasks} className="text-sm text-blue-600 hover:underline">Expand all</button>
           <button onClick={collapseAllTasks} className="text-sm text-blue-600 hover:underline">Collapse all</button>
@@ -975,29 +1023,33 @@ function TaskTree(props: {
           submitRemark={submitRemark} attachPhoto={attachPhoto} updateRemark={updateRemark} deleteRemark={deleteRemark} />
       ) : (
       <div className="overflow-x-auto">
-      <div className="border border-gray-200 rounded-xl overflow-hidden">
-        <div className="grid grid-cols-[minmax(200px,1fr)_118px_118px_118px_118px_100px_100px] min-w-[1080px] gap-1 bg-gray-50 border-b border-gray-200 px-2.5 py-2 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+      <div className="border border-gray-300 rounded-xl overflow-hidden">
+        <div className="grid grid-cols-[minmax(200px,1fr)_118px_118px_118px_118px_100px_100px] min-w-[1080px] gap-1 bg-gray-50 border-b border-gray-300 px-2.5 py-2 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
           <span>Activity</span><span>Plan start</span><span>Plan end</span><span>Act. start</span><span>Act. end</span><span>Status</span><span></span>
         </div>
 
         {stages.map(stage => {
           const mainTasks = tasks.filter(t => t.stageId === stage.id && !t.parentId);
+          const doneCount = mainTasks.filter(t => t.status === "done").length;
           return (
             <div key={stage.id}>
               <div data-drop-id={stage.id} {...longPressHandlers(() => startDrag("stage", stage.id))}
-                className={`grid grid-cols-[minmax(200px,1fr)_118px_118px_118px_118px_100px_100px] min-w-[1080px] gap-1 items-center px-2.5 py-2.5 border-b border-gray-200 cursor-pointer select-none ${dragging?.id === stage.id ? "opacity-40" : "bg-gray-100"} ${hoverId === stage.id && dragging && dragging.id !== stage.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}
+                className={`grid grid-cols-[minmax(200px,1fr)_118px_118px_118px_118px_100px_100px] min-w-[1080px] gap-1 items-center px-2.5 py-2.5 border-b border-b-gray-300 border-l-4 cursor-pointer select-none ${STAGE_BORDER[stage.status]} ${dragging?.id === stage.id ? "opacity-40" : "bg-gray-100"} ${hoverId === stage.id && dragging && dragging.id !== stage.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}
                 onClick={() => toggleOpen(stage.id)}>
                 <div className="flex items-center gap-2 min-w-0">
                   <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 text-gray-500 transition-transform ${openTasks.has(stage.id) ? "rotate-90" : ""}`} />
                   <Layers className={`w-3.5 h-3.5 flex-shrink-0 ${STAGE_ICON_COLOR[stage.status]}`} />
-                  <EditableName value={stage.name} onSave={v => patchStage(stage.id, { name: v })} className="text-[11px] font-extrabold text-gray-600 uppercase tracking-widest truncate" />
+                  <EditableName value={stage.name} onSave={v => patchStage(stage.id, { name: v })} className="text-[11px] font-extrabold text-gray-700 uppercase tracking-widest truncate" />
+                  {mainTasks.length > 0 && (
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${doneCount === mainTasks.length ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-600"}`}>{doneCount}/{mainTasks.length}</span>
+                  )}
                 </div>
-                <span className="text-xs font-medium text-gray-400">{fmtDate(stage.planStart)}</span>
-                <span className="text-xs font-medium text-gray-400">{fmtDate(stage.planEnd)}</span>
-                <span className="text-xs font-medium text-blue-500">{fmtDate(stage.actualStart)}</span>
-                <span className="text-xs font-medium text-blue-500">{fmtDate(stage.actualEnd)}</span>
+                <span className="text-xs font-medium text-gray-500">{fmtDate(stage.planStart)}</span>
+                <span className="text-xs font-medium text-gray-500">{fmtDate(stage.planEnd)}</span>
+                <span className="text-xs font-medium text-blue-600">{fmtDate(stage.actualStart)}</span>
+                <span className="text-xs font-medium text-blue-600">{fmtDate(stage.actualEnd)}</span>
                 <select value={stage.status} onChange={e => { e.stopPropagation(); patchStage(stage.id, { status: e.target.value as StageStatus }); }} onClick={e => e.stopPropagation()}
-                  className="text-sm border border-gray-200 rounded px-1 py-0.5">
+                  className={`text-sm border rounded-md px-1.5 py-0.5 font-medium ${stage.status === "done" ? "bg-green-50 border-green-300 text-green-700" : stage.status === "in_progress" ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-gray-50 border-gray-300 text-gray-500"}`}>
                   <option value="pending">Pending</option>
                   <option value="in_progress">In progress</option>
                   <option value="done">Done</option>
@@ -1009,7 +1061,7 @@ function TaskTree(props: {
               </div>
 
               {openTasks.has(stage.id) && mainTasks.map(mt => (
-                <MainTaskRow key={mt.id} task={mt} subTasks={tasks.filter(t => t.parentId === mt.id)} comments={comments}
+                <MainTaskRow key={mt.id} task={mt} subTasks={tasks.filter(t => t.parentId === mt.id)} comments={comments} today={today}
                   openTasks={openTasks} toggleOpen={toggleOpen} openComments={openComments} toggleComments={toggleComments}
                   submitRemark={submitRemark} attachPhoto={attachPhoto} updateRemark={updateRemark} deleteRemark={deleteRemark}
                   toggleMilestone={toggleMilestone} deleteTask={deleteTask} patchTask={patchTask}
@@ -1124,36 +1176,9 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   }
   const gridlinesPx = Array.from({ length: totalDays + 1 }, (_, i) => i % labelStep === 0 ? i * DAY_PX : null).filter((v): v is number => v !== null);
 
-  // RAG model: compare actual dates against planned dates, not today.
-  // actualEnd vs planEnd → if no actualEnd, use today as proxy for in-progress tasks.
-  const WEEK_MS = 7 * 86400000;
-  const taskRisk = (t: PlanTask): "risk" | "warning" | "ontrack" => {
-    const planEndMs = t.planEnd ? new Date(t.planEnd).getTime() : null;
-    const planStartMs = t.planStart ? new Date(t.planStart).getTime() : null;
-    if (t.actualEnd) {
-      if (planEndMs === null) return "ontrack";
-      const delta = new Date(t.actualEnd).getTime() - planEndMs;
-      if (delta > WEEK_MS) return "risk";
-      if (delta > 0) return "warning";
-      return "ontrack";
-    }
-    if (t.status === "done") return "ontrack";
-    if (t.status === "in_progress" || t.actualStart) {
-      if (planEndMs === null) return "ontrack";
-      const delta = today - planEndMs;
-      if (delta > WEEK_MS) return "risk";
-      if (delta > 0) return "warning";
-      return "ontrack";
-    }
-    // Pending — flag if overdue to start
-    if (planStartMs !== null && planStartMs < today) {
-      const delta = today - planStartMs;
-      if (delta > WEEK_MS) return "risk";
-      return "warning";
-    }
-    return "ontrack";
-  };
-  const RISK_COLOR = { risk: "#DC2626", warning: "#F59E0B", ontrack: "#16A34A" } as const;
+  // RAG model shared with the List view's status pills — see taskRiskOf above.
+  const taskRisk = (t: PlanTask) => taskRiskOf(t, today);
+  const RISK_COLOR = RISK_HEX;
   const CURRENT_COLOR = "#2563EB";
   const barColor = (t: PlanTask) => RISK_COLOR[taskRisk(t)];
 
@@ -1463,11 +1488,11 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
 }
 
 function MainTaskRow({
-  task, subTasks, comments, openTasks, toggleOpen, openComments, toggleComments,
+  task, subTasks, comments, today, openTasks, toggleOpen, openComments, toggleComments,
   submitRemark, attachPhoto, updateRemark, deleteRemark, toggleMilestone, deleteTask, patchTask, setAddingTaskFor, stageId,
   addingTaskFor, addTask, dragging, hoverId, startDrag,
 }: {
-  task: PlanTask; subTasks: PlanTask[]; comments: Comment[];
+  task: PlanTask; subTasks: PlanTask[]; comments: Comment[]; today: number;
   openTasks: Set<string>; toggleOpen: (id: string) => void;
   openComments: Set<string>; toggleComments: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
@@ -1483,7 +1508,7 @@ function MainTaskRow({
   return (
     <>
       <div data-drop-id={task.id} {...longPressHandlers(() => startDrag("task", task.id))}
-        className={`grid grid-cols-[minmax(200px,1fr)_118px_118px_118px_118px_100px_100px] min-w-[1080px] gap-1 items-center pl-5 pr-2.5 py-2 border-b border-gray-100 cursor-pointer select-none ${dragging?.id === task.id ? "opacity-40" : "bg-white hover:bg-blue-50/30"} ${hoverId === task.id && dragging && dragging.id !== task.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}
+        className={`grid grid-cols-[minmax(200px,1fr)_118px_118px_118px_118px_100px_100px] min-w-[1080px] gap-1 items-center pl-5 pr-2.5 py-2 border-b border-gray-200 cursor-pointer select-none ${dragging?.id === task.id ? "opacity-40" : "bg-white hover:bg-blue-50/30"} ${hoverId === task.id && dragging && dragging.id !== task.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}
         onClick={() => hasChildren && toggleOpen(task.id)}>
         <div className="flex items-center gap-1.5 min-w-0">
           {hasChildren ? <ChevronRight className={`w-3.5 h-3.5 flex-shrink-0 text-blue-400 transition-transform ${openTasks.has(task.id) ? "rotate-90" : ""}`} /> : <span className="w-3.5 flex-shrink-0" />}
@@ -1496,7 +1521,8 @@ function MainTaskRow({
         <DateCell value={task.actualStart} onChange={v => patchTask(task.id, { actualStart: v })} accent />
         <DateCell value={task.actualEnd} onChange={v => patchTask(task.id, { actualEnd: v })} accent />
         <select value={task.status} onChange={e => { e.stopPropagation(); patchTask(task.id, { status: e.target.value as StageStatus }); }} onClick={e => e.stopPropagation()}
-          className="text-sm border border-gray-200 rounded px-1 py-0.5">
+          title="Status (color reflects schedule health)"
+          className={`text-sm border rounded-md px-1.5 py-0.5 font-medium ${statusPillClass(task, today)}`}>
           <option value="pending">Pending</option>
           <option value="in_progress">In progress</option>
           <option value="done">Done</option>
@@ -1514,7 +1540,7 @@ function MainTaskRow({
       )}
 
       {openTasks.has(task.id) && subTasks.map(st => (
-        <SubTaskRow key={st.id} task={st} comments={comments.filter(c => c.taskId === st.id)}
+        <SubTaskRow key={st.id} task={st} comments={comments.filter(c => c.taskId === st.id)} today={today}
           openComments={openComments} toggleComments={toggleComments}
           submitRemark={submitRemark} attachPhoto={attachPhoto} updateRemark={updateRemark} deleteRemark={deleteRemark}
           deleteTask={deleteTask} patchTask={patchTask}
@@ -1534,10 +1560,10 @@ function MainTaskRow({
 }
 
 function SubTaskRow({
-  task, comments, openComments, toggleComments, submitRemark, attachPhoto, updateRemark, deleteRemark, deleteTask, patchTask,
+  task, comments, today, openComments, toggleComments, submitRemark, attachPhoto, updateRemark, deleteRemark, deleteTask, patchTask,
   dragging, hoverId, startDrag,
 }: {
-  task: PlanTask; comments: Comment[]; openComments: Set<string>; toggleComments: (id: string) => void;
+  task: PlanTask; comments: Comment[]; today: number; openComments: Set<string>; toggleComments: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
   updateRemark: (commentId: string, text: string) => void;
   deleteRemark: (commentId: string) => void;
@@ -1546,7 +1572,7 @@ function SubTaskRow({
   return (
     <>
       <div data-drop-id={task.id} {...longPressHandlers(() => startDrag("task", task.id))}
-        className={`grid grid-cols-[minmax(200px,1fr)_118px_118px_118px_118px_100px_100px] min-w-[1080px] gap-1 items-center pl-10 pr-2.5 py-1.5 border-b border-gray-100 select-none ${dragging?.id === task.id ? "opacity-40" : "bg-slate-50"} ${hoverId === task.id && dragging && dragging.id !== task.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}>
+        className={`grid grid-cols-[minmax(200px,1fr)_118px_118px_118px_118px_100px_100px] min-w-[1080px] gap-1 items-center pl-10 pr-2.5 py-1.5 border-b border-gray-200 select-none ${dragging?.id === task.id ? "opacity-40" : "bg-slate-50"} ${hoverId === task.id && dragging && dragging.id !== task.id ? "ring-2 ring-blue-400 ring-inset" : ""}`}>
         <div className="flex items-center gap-1.5 min-w-0">
           <button onClick={e => { e.stopPropagation(); toggleComments(task.id); }} className={`w-4 h-4 flex-shrink-0 flex items-center justify-center rounded transition-colors ${openComments.has(task.id) || comments.length ? "text-blue-500" : "text-gray-300 hover:text-blue-400"}`}><MessageSquare className="w-3.5 h-3.5" /></button>
           <CornerDownRight className="w-3.5 h-3.5 flex-shrink-0 text-gray-300" />
@@ -1557,7 +1583,8 @@ function SubTaskRow({
         <DateCell value={task.actualStart} onChange={v => patchTask(task.id, { actualStart: v })} accent small />
         <DateCell value={task.actualEnd} onChange={v => patchTask(task.id, { actualEnd: v })} accent small />
         <select value={task.status} onChange={e => patchTask(task.id, { status: e.target.value as StageStatus })}
-          className="text-xs border border-gray-200 rounded px-1 py-0.5 text-gray-500">
+          title="Status (color reflects schedule health)"
+          className={`text-xs border rounded-md px-1.5 py-0.5 font-medium ${statusPillClass(task, today)}`}>
           <option value="pending">Pending</option>
           <option value="in_progress">In progress</option>
           <option value="done">Done</option>
@@ -1576,7 +1603,7 @@ function SubTaskRow({
 function DateCell({ value, onChange, accent, small }: { value: string | null; onChange: (v: string) => void; accent?: boolean; small?: boolean }) {
   return (
     <input type="date" value={value ?? ""} onChange={e => onChange(e.target.value)}
-      className={`bg-transparent border-none focus:ring-1 focus:ring-blue-300 rounded px-0.5 ${small ? "text-xs" : "text-sm"} ${accent ? "text-blue-500" : small ? "text-gray-400" : "text-gray-500"}`} />
+      className={`bg-transparent border-none focus:ring-1 focus:ring-blue-400 rounded px-0.5 font-medium ${small ? "text-xs" : "text-sm"} ${accent ? "text-blue-600" : small ? "text-gray-500" : "text-gray-600"}`} />
   );
 }
 
