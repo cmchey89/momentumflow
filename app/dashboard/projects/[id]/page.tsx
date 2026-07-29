@@ -1075,29 +1075,35 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
     return <p className="text-sm text-gray-400 text-center py-12 border border-gray-200 rounded-xl">No planned dates yet — add plan start/end dates in Plan view to see the timeline.</p>;
   }
 
-  const rangeStart = Math.min(...allDates, today);
-  const rangeEnd = Math.max(...allDates, today);
-  const span = Math.max(rangeEnd - rangeStart, 86400000);
+  // Snap to whole UTC days and pad one day either side, so bars never sit flush against
+  // the ruler edge and every day index maps to an exact percentage.
+  const DAY = 86400000;
+  const dayFloor = (ms: number) => Math.floor(ms / DAY) * DAY;
+  const rangeStart = dayFloor(Math.min(...allDates, today)) - DAY;
+  const rangeEnd = dayFloor(Math.max(...allDates, today)) + DAY;
+  const span = Math.max(rangeEnd - rangeStart, DAY);
 
   const pct = (d: string | null) => d ? ((new Date(d).getTime() - rangeStart) / span) * 100 : null;
   const todayPct = ((today - rangeStart) / span) * 100;
 
   const ticks = 5;
   const tickDates = Array.from({ length: ticks + 1 }, (_, i) => new Date(rangeStart + (span * i) / ticks));
-  const totalDays = Math.round(span / 86400000);
+  const totalDays = Math.round(span / DAY);
   const showDailyRuler = totalDays <= 90; // beyond ~3 months, per-day ticks would be too dense to read
+  // Evenly spaced labels — a fixed day interval keeps the gap between labels proportional to elapsed time.
+  const labelStep = totalDays <= 12 ? 1 : totalDays <= 24 ? 2 : totalDays <= 45 ? 5 : totalDays <= 70 ? 7 : 14;
 
   const weekendBands: { left: number; width: number }[] = [];
   if (showDailyRuler) {
-    for (let i = 0; i <= totalDays; i++) {
-      const d = new Date(rangeStart + i * 86400000);
+    for (let i = 0; i < totalDays; i++) {
+      const d = new Date(rangeStart + i * DAY);
       if (d.getUTCDay() === 6 || d.getUTCDay() === 0) {
-        weekendBands.push({ left: (i * 86400000 / span) * 100, width: (86400000 / span) * 100 });
+        weekendBands.push({ left: (i * DAY / span) * 100, width: (DAY / span) * 100 });
       }
     }
   }
   const gridlinePcts = showDailyRuler
-    ? Array.from({ length: totalDays + 1 }, (_, i) => (i % 5 === 0 || i === totalDays) ? (i * 86400000 / span) * 100 : null).filter((v): v is number => v !== null)
+    ? Array.from({ length: totalDays + 1 }, (_, i) => i % labelStep === 0 ? (i * DAY / span) * 100 : null).filter((v): v is number => v !== null)
     : tickDates.map((_, i) => (i / ticks) * 100);
 
   // RAG model: compare actual dates against planned dates, not today.
@@ -1306,13 +1312,16 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
             {showDailyRuler ? (
               <div className="relative h-7 text-[11px] text-gray-400">
                 {Array.from({ length: totalDays + 1 }, (_, i) => {
-                  const d = new Date(rangeStart + i * 86400000);
-                  const isMajor = i % 5 === 0 || i % 5 === 4 || i === totalDays;
-                  const leftPct = (i * 86400000 / span) * 100;
+                  const d = new Date(rangeStart + i * DAY);
+                  const isMajor = i % labelStep === 0;
+                  const leftPct = (i * DAY / span) * 100;
+                  // Edge labels anchor inward instead of centering, so they never spill past
+                  // the scroll container's boundary and get visually clipped.
+                  const anchor = i === 0 ? "left-0" : i === totalDays ? "right-0" : "left-1/2 -translate-x-1/2";
                   return (
                     <div key={i} className="absolute top-0" style={{ left: `${leftPct}%` }}>
                       <div className={isMajor ? "w-px h-2 bg-gray-400" : "w-px h-1 bg-gray-200"} />
-                      {isMajor && <span className="absolute top-2.5 -translate-x-1/2 whitespace-nowrap text-gray-500 font-medium">{d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>}
+                      {isMajor && <span className={`absolute top-2.5 ${anchor} whitespace-nowrap text-gray-500 font-medium`}>{d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>}
                     </div>
                   );
                 })}
