@@ -1698,6 +1698,47 @@ function TaskDetailModal({ task, comments, onClose, patchTask, toggleMilestone, 
   );
 }
 
+// ── EditableCell ─────────────────────────────────────────────────────────
+
+function EditableCell({
+  value, displayValue, onSave, type = "text", inputClass = "", textClass = "", placeholder = "—",
+}: {
+  value: string; displayValue?: React.ReactNode; onSave: (v: string) => void;
+  type?: "text" | "number" | "date"; inputClass?: string; textClass?: string; placeholder?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
+  useEffect(() => { if (editing) { inputRef.current?.focus(); inputRef.current?.select(); } }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    if (draft !== value) onSave(draft);
+  };
+
+  if (editing) {
+    return (
+      <input ref={inputRef} type={type} value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setEditing(false); setDraft(value); } }}
+        className={`border border-blue-300 rounded px-1.5 py-0.5 text-sm outline-none focus:ring-1 focus:ring-blue-400 bg-white ${inputClass}`}
+      />
+    );
+  }
+
+  return (
+    <span onClick={e => { e.stopPropagation(); setEditing(true); }}
+      className={`cursor-pointer rounded px-0.5 hover:bg-blue-50 hover:outline hover:outline-1 hover:outline-blue-200 transition-all ${textClass}`}
+      title="Click to edit">
+      {displayValue !== undefined ? displayValue
+        : value ? value : <span className="text-gray-300 italic text-xs">{placeholder}</span>}
+    </span>
+  );
+}
+
 // ── Finance Tab ─────────────────────────────────────────────────────────
 
 interface FinanceData {
@@ -1781,6 +1822,11 @@ function FinanceTab({ projectId, bg }: {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
     }); load();
   };
+  const patchPo = async (id: string, patch: Record<string, unknown>) => {
+    await fetch(`/api/finance/pos/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+    }); load();
+  };
   const deletePo = async (id: string) => {
     if (!confirm("Delete this PO and all its payments?")) return;
     await fetch(`/api/finance/pos/${id}`, { method: "DELETE" }); load();
@@ -1795,6 +1841,16 @@ function FinanceTab({ projectId, bg }: {
   };
   const deletePayment = async (id: string) => {
     await fetch(`/api/finance/po-payments/${id}`, { method: "DELETE" }); load();
+  };
+  const patchPayment = async (id: string, patch: Record<string, unknown>) => {
+    await fetch(`/api/finance/po-payments/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+    }); load();
+  };
+  const patchContractor = async (contractorId: string, patch: Record<string, unknown>) => {
+    await fetch(`/api/finance/contractors/${contractorId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+    }); load();
   };
 
   return (
@@ -1861,8 +1917,15 @@ function FinanceTab({ projectId, bg }: {
           <tbody>
             {wos.map(wo => (
               <tr key={wo.id} className="border-t border-gray-100 hover:bg-gray-50/50">
-                <td className="px-4 py-2 font-mono text-sm text-gray-700">{wo.woNumber}</td>
-                <td className="px-4 py-2 text-gray-700">{wo.description || "—"}</td>
+                <td className="px-4 py-2">
+                  <EditableCell value={wo.woNumber} onSave={v => patchWo(wo.id, { woNumber: v })}
+                    inputClass="w-24 font-mono" textClass="font-mono text-sm text-gray-700" />
+                </td>
+                <td className="px-4 py-2">
+                  <EditableCell value={wo.description || ""} placeholder="Add description"
+                    onSave={v => patchWo(wo.id, { description: v })}
+                    inputClass="w-48" textClass="text-gray-700" />
+                </td>
                 <td className="px-4 py-2">
                   <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${wo.type === "original" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700"}`}>
                     {wo.type === "original" ? "Original" : "Variation"}
@@ -1875,7 +1938,12 @@ function FinanceTab({ projectId, bg }: {
                     <option value="superseded">Superseded</option>
                   </select>
                 </td>
-                <td className="px-4 py-2 text-right font-medium tabular-nums">{fmtMoney(Number(wo.contractValue))}</td>
+                <td className="px-4 py-2 text-right">
+                  <EditableCell value={wo.contractValue}
+                    displayValue={<span className="font-medium tabular-nums">{fmtMoney(Number(wo.contractValue))}</span>}
+                    onSave={v => patchWo(wo.id, { contractValue: v })} type="number"
+                    inputClass="w-28 text-right" textClass="font-medium tabular-nums" />
+                </td>
                 <td className="px-2 py-2">
                   <button onClick={() => deleteWo(wo.id)} className="text-gray-300 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
                 </td>
@@ -1919,15 +1987,25 @@ function FinanceTab({ projectId, bg }: {
                   <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform duration-150 ${isOpen ? "rotate-90" : ""}`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-gray-900">{po.contractorName}</span>
-                      <span className="text-xs text-gray-400 font-mono bg-gray-100 px-1.5 py-0.5 rounded">{po.poNumber}</span>
-                      {po.scope && <span className="text-xs text-gray-500 truncate">{po.scope}</span>}
+                      <EditableCell value={po.contractorName}
+                        onSave={v => patchContractor(po.contractorId, { name: v })}
+                        inputClass="font-medium text-sm" textClass="font-medium text-gray-900" />
+                      <span className="text-xs text-gray-400 font-mono bg-gray-100 px-1.5 py-0.5 rounded">
+                        <EditableCell value={po.poNumber} onSave={v => patchPo(po.id, { poNumber: v })}
+                          inputClass="w-20 font-mono text-xs" textClass="font-mono text-xs text-gray-600" />
+                      </span>
+                      <EditableCell value={po.scope || ""} placeholder="Add scope"
+                        onSave={v => patchPo(po.id, { scope: v })}
+                        inputClass="w-40 text-xs" textClass="text-xs text-gray-500" />
                     </div>
                   </div>
                   <div className="flex items-center gap-5 text-sm shrink-0" onClick={e => e.stopPropagation()}>
                     <div className="text-right">
                       <p className="text-xs text-gray-400">PO Value</p>
-                      <p className="font-medium tabular-nums">{fmtMoney(Number(po.poValue))}</p>
+                      <EditableCell value={po.poValue}
+                        displayValue={<span className="font-medium tabular-nums">{fmtMoney(Number(po.poValue))}</span>}
+                        onSave={v => patchPo(po.id, { poValue: v })} type="number"
+                        inputClass="w-24 text-right text-sm" textClass="font-medium tabular-nums block" />
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-gray-400">Paid</p>
@@ -1973,15 +2051,31 @@ function FinanceTab({ projectId, bg }: {
                               const pct = Number(li.totalQty) > 0 ? (Number(li.completedQty) / Number(li.totalQty)) * 100 : 0;
                               return (
                                 <tr key={li.id} className="border-t border-gray-50">
-                                  <td className="px-3 py-1.5 text-gray-700">{li.description}</td>
-                                  <td className="px-3 py-1.5 text-gray-500 text-xs">{li.unit}</td>
-                                  <td className="px-3 py-1.5 text-right tabular-nums">{fmtMoney(Number(li.unitRate))}</td>
-                                  <td className="px-3 py-1.5 text-right tabular-nums">{Number(li.totalQty).toLocaleString()}</td>
+                                  <td className="px-3 py-1.5">
+                                    <EditableCell value={li.description} onSave={v => patchLineItem(li.id, { description: v })}
+                                      inputClass="w-full" textClass="text-gray-700" />
+                                  </td>
+                                  <td className="px-3 py-1.5">
+                                    <EditableCell value={li.unit} onSave={v => patchLineItem(li.id, { unit: v })}
+                                      inputClass="w-12 text-xs" textClass="text-xs text-gray-500" />
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right">
+                                    <EditableCell value={li.unitRate}
+                                      displayValue={<span className="tabular-nums">{fmtMoney(Number(li.unitRate))}</span>}
+                                      onSave={v => patchLineItem(li.id, { unitRate: v })} type="number"
+                                      inputClass="w-20 text-right" textClass="tabular-nums" />
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right">
+                                    <EditableCell value={li.totalQty}
+                                      displayValue={<span className="tabular-nums">{Number(li.totalQty).toLocaleString()}</span>}
+                                      onSave={v => patchLineItem(li.id, { totalQty: v })} type="number"
+                                      inputClass="w-20 text-right" textClass="tabular-nums" />
+                                  </td>
                                   <td className="px-3 py-1.5 text-right">
                                     <div className="flex items-center justify-end gap-1.5">
-                                      <input type="number" defaultValue={li.completedQty}
-                                        className="w-16 text-xs text-right border border-gray-200 rounded px-1.5 py-0.5"
-                                        onBlur={e => { if (e.target.value !== li.completedQty) patchLineItem(li.id, { completedQty: e.target.value }); }} />
+                                      <EditableCell value={li.completedQty}
+                                        onSave={v => patchLineItem(li.id, { completedQty: v })} type="number"
+                                        inputClass="w-16 text-right text-xs" textClass="text-xs tabular-nums text-gray-700" />
                                       <span className="text-xs text-gray-400 w-8 text-right">{pct.toFixed(0)}%</span>
                                     </div>
                                   </td>
@@ -2022,10 +2116,27 @@ function FinanceTab({ projectId, bg }: {
                           <tbody>
                             {poPays.map(pay => (
                               <tr key={pay.id} className="border-t border-gray-50">
-                                <td className="px-3 py-1.5 text-gray-600">{pay.paymentDate || "—"}</td>
-                                <td className="px-3 py-1.5 font-mono text-xs text-gray-600">{pay.invoiceRef || "—"}</td>
-                                <td className="px-3 py-1.5 text-xs text-gray-500">{pay.notes || "—"}</td>
-                                <td className="px-3 py-1.5 text-right font-medium tabular-nums">{fmtMoney(Number(pay.amount))}</td>
+                                <td className="px-3 py-1.5">
+                                  <EditableCell value={pay.paymentDate || ""} type="date" placeholder="Set date"
+                                    onSave={v => patchPayment(pay.id, { paymentDate: v })}
+                                    inputClass="text-xs" textClass="text-gray-600 text-sm" />
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  <EditableCell value={pay.invoiceRef || ""} placeholder="—"
+                                    onSave={v => patchPayment(pay.id, { invoiceRef: v })}
+                                    inputClass="w-24 font-mono text-xs" textClass="font-mono text-xs text-gray-600" />
+                                </td>
+                                <td className="px-3 py-1.5">
+                                  <EditableCell value={pay.notes || ""} placeholder="—"
+                                    onSave={v => patchPayment(pay.id, { notes: v })}
+                                    inputClass="w-36 text-xs" textClass="text-xs text-gray-500" />
+                                </td>
+                                <td className="px-3 py-1.5 text-right">
+                                  <EditableCell value={pay.amount}
+                                    displayValue={<span className="font-medium tabular-nums">{fmtMoney(Number(pay.amount))}</span>}
+                                    onSave={v => patchPayment(pay.id, { amount: v })} type="number"
+                                    inputClass="w-24 text-right" textClass="font-medium tabular-nums" />
+                                </td>
                                 <td className="px-2 py-1.5">
                                   <button onClick={() => deletePayment(pay.id)} className="text-gray-200 hover:text-red-400"><X className="w-3 h-3" /></button>
                                 </td>
