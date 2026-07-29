@@ -1084,8 +1084,16 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   // With no dates plotted yet, default to a 4-week window centered on today instead of
   // collapsing to a 1-day sliver — so the ruler is still useful while the first stage
   // is being planned.
-  const rangeStart = hasDates ? dayFloor(Math.min(...allDates, today)) - DAY : dayFloor(today) - 14 * DAY;
-  const rangeEnd = hasDates ? dayFloor(Math.max(...allDates, today)) + DAY : dayFloor(today) + 14 * DAY;
+  let rangeStart = hasDates ? dayFloor(Math.min(...allDates, today)) - DAY : dayFloor(today) - 14 * DAY;
+  let rangeEnd = hasDates ? dayFloor(Math.max(...allDates, today)) + DAY : dayFloor(today) + 14 * DAY;
+  // Even with real dates plotted, always show at least a 4-week span — a project whose
+  // dates all cluster within a few days shouldn't render a cramped few-day-wide ruler.
+  const MIN_SPAN = 28 * DAY;
+  if (rangeEnd - rangeStart < MIN_SPAN) {
+    const mid = dayFloor((rangeStart + rangeEnd) / 2);
+    rangeStart = mid - MIN_SPAN / 2;
+    rangeEnd = mid + MIN_SPAN / 2;
+  }
   const span = Math.max(rangeEnd - rangeStart, DAY);
   const totalDays = Math.round(span / DAY);
   const timelineWidth = Math.max(totalDays * DAY_PX, 240);
