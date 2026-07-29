@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef, Fragment } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
-  ArrowLeft, Plus, ChevronRight, MessageSquare, Flag, Trash2,
+  ArrowLeft, Plus, ChevronRight, ChevronLeft, MessageSquare, Flag, Trash2,
   Upload, Download, FileText, X, Pencil, Layers, Square, CornerDownRight,
 } from "lucide-react";
 
@@ -1084,7 +1084,7 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   // With no dates plotted yet, default to a 4-week window centered on today instead of
   // collapsing to a 1-day sliver — so the ruler is still useful while the first stage
   // is being planned.
-  let rangeStart = hasDates ? dayFloor(Math.min(...allDates, today)) - DAY : dayFloor(today) - 14 * DAY;
+  let rangeStart = hasDates ? dayFloor(Math.min(...allDates, today)) - 2 * DAY : dayFloor(today) - 14 * DAY;
   let rangeEnd = hasDates ? dayFloor(Math.max(...allDates, today)) + DAY : dayFloor(today) + 14 * DAY;
   // Even with real dates plotted, always show at least a 4-week span — a project whose
   // dates all cluster within a few days shouldn't render a cramped few-day-wide ruler.
@@ -1176,6 +1176,11 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
     if (!el) return;
     el.scrollLeft = Math.max(0, scrollTargetPx - 14 * DAY_PX);
   }, [scrollTargetPx]);
+
+  // Explicit pan controls — the native horizontal scrollbar sits below every row, which is
+  // easy to lose track of once a project has more than a screenful of tasks.
+  const scrollByDays = (days: number) => scrollRef.current?.scrollBy({ left: days * DAY_PX, behavior: "smooth" });
+  const scrollToToday = () => scrollRef.current?.scrollTo({ left: Math.max(0, todayPx - 14 * DAY_PX), behavior: "smooth" });
 
   const renderDecorations = () => (
     <>
@@ -1311,6 +1316,18 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
           <span className="flex items-center gap-1"><span className="w-px h-3 inline-block bg-blue-500" /> Today</span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
+            <button onClick={() => scrollByDays(-7)} title="Back 1 week" className="p-1.5 text-gray-500 hover:bg-gray-50">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button onClick={scrollToToday} title="Jump to today"
+              className="text-[11px] font-semibold px-2 py-1.5 text-gray-600 hover:bg-gray-50 border-x border-gray-300 whitespace-nowrap">
+              Today
+            </button>
+            <button onClick={() => scrollByDays(7)} title="Forward 1 week" className="p-1.5 text-gray-500 hover:bg-gray-50">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
           {focusMode && (
             <select value={effectiveCurrentTaskId ?? ""} onChange={e => setFocusTaskId(e.target.value)}
               className="text-[11px] border border-gray-300 rounded-lg px-2 py-1.5 text-gray-600 max-w-[220px]">
