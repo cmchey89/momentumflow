@@ -1058,6 +1058,8 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   const [showFuture, setShowFuture] = useState(false);
   const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const [viewportScrollLeft, setViewportScrollLeft] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const allDates: number[] = [];
@@ -1182,11 +1184,48 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   const scrollByDays = (days: number) => scrollRef.current?.scrollBy({ left: days * DAY_PX, behavior: "smooth" });
   const scrollToToday = () => scrollRef.current?.scrollTo({ left: Math.max(0, todayPx - 14 * DAY_PX), behavior: "smooth" });
 
+  // Track the scroll position so a persistent minimap can show + control it directly —
+  // the native scrollbar only shows up below the very last row, easy to lose track of.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => { setViewportScrollLeft(el.scrollLeft); setViewportWidth(el.clientWidth); };
+    update();
+    el.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
+    return () => { el.removeEventListener("scroll", update); window.removeEventListener("resize", update); };
+  }, [timelineWidth]);
+
+  const minimapClamp = (v: number) => Math.max(0, Math.min(v, timelineWidth - viewportWidth));
+  const minimapClickToScroll = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const frac = (e.clientX - rect.left) / rect.width;
+    scrollRef.current?.scrollTo({ left: minimapClamp(frac * timelineWidth - viewportWidth / 2), behavior: "smooth" });
+  };
+  const minimapDragStart = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const track = e.currentTarget.parentElement as HTMLElement;
+    const trackWidth = track.getBoundingClientRect().width;
+    const startX = e.clientX;
+    const startScroll = scrollRef.current?.scrollLeft ?? 0;
+    const onMove = (ev: MouseEvent) => {
+      if (!scrollRef.current) return;
+      const deltaFrac = (ev.clientX - startX) / trackWidth;
+      scrollRef.current.scrollLeft = minimapClamp(startScroll + deltaFrac * timelineWidth);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   const renderDecorations = () => (
     <>
       {weekendBands.map((b, i) => <div key={`w${i}`} className="absolute top-0 bottom-0 bg-gray-100/60" style={{ left: `${b.left}px`, width: `${b.width}px` }} />)}
       {gridlinesPx.map((p, i) => <div key={`g${i}`} className="absolute top-0 bottom-0 w-px bg-gray-100" style={{ left: `${p}px` }} />)}
-      {todayPx >= 0 && todayPx <= timelineWidth && <div className="absolute top-0 bottom-0 w-px bg-blue-500" style={{ left: `${todayPx}px` }} />}
+      {todayPx >= 0 && todayPx <= timelineWidth && <div className="absolute top-0 bottom-0 w-[3px] -ml-px bg-blue-600" style={{ left: `${todayPx}px` }} />}
     </>
   );
 
@@ -1313,7 +1352,7 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
           <span className="flex items-center gap-1"><span className="w-3 h-1 rounded inline-block" style={{ background: RISK_COLOR.warning }} /> Delayed &lt;7d</span>
           <span className="flex items-center gap-1"><span className="w-3 h-1 rounded inline-block" style={{ background: RISK_COLOR.risk }} /> Overdue &gt;7d</span>
           <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rotate-45 inline-block" style={{ background: "#9333EA" }} /> Milestone</span>
-          <span className="flex items-center gap-1"><span className="w-px h-3 inline-block bg-blue-500" /> Today</span>
+          <span className="flex items-center gap-1"><span className="w-[3px] h-3 inline-block bg-blue-600 rounded-sm" /> Today</span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden">
@@ -1341,6 +1380,27 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
           </button>
         </div>
       </div>
+
+      {timelineWidth > viewportWidth && viewportWidth > 0 && (
+        <div className="flex mb-2">
+          <div className="w-80 flex-shrink-0 pr-2" />
+          <div className="flex-1 min-w-0">
+            <div className="relative h-2.5 bg-gray-100 rounded-full cursor-pointer" onClick={minimapClickToScroll}>
+              {todayPx >= 0 && todayPx <= timelineWidth && (
+                <div className="absolute top-0 bottom-0 w-0.5 bg-blue-300" style={{ left: `${(todayPx / timelineWidth) * 100}%` }} />
+              )}
+              <div
+                className="absolute top-0 bottom-0 bg-blue-400/70 hover:bg-blue-400 rounded-full cursor-grab active:cursor-grabbing"
+                style={{
+                  left: `${(minimapClamp(viewportScrollLeft) / timelineWidth) * 100}%`,
+                  width: `${Math.min(100, (viewportWidth / timelineWidth) * 100)}%`,
+                }}
+                onMouseDown={minimapDragStart}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex">
         <div className="flex-shrink-0 bg-white pr-2 flex flex-col gap-y-1.5 w-80">
