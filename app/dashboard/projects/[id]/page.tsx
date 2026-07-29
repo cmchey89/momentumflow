@@ -1245,16 +1245,16 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
     rows.push({
       key: t.id,
       label: (
-        <div className={`h-10 flex items-center gap-1.5 pr-4 text-sm cursor-pointer ${t.parentId ? "pl-6" : ""} ${dim ? "opacity-50" : ""}`} onClick={() => setDetailTaskId(t.id)}>
+        <div className={`h-10 flex items-center gap-1.5 pr-4 text-sm ${t.parentId ? "pl-6" : ""} ${dim ? "opacity-50" : ""}`}>
           {hasChildren && <ChevronRight className={`w-3 h-3 flex-shrink-0 transition-transform ${openTasks.has(t.id) ? "rotate-90" : ""}`} onClick={e => { e.stopPropagation(); toggleOpen(t.id); }} />}
           {t.isMilestone ? <span className="w-1.5 h-1.5 rotate-45 flex-shrink-0" style={{ background: "#9333EA" }} /> : <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-gray-300" />}
-          <span className={`line-clamp-2 ${t.status === "done" ? "line-through text-gray-400" : t.isMilestone ? "text-purple-700 font-medium" : t.parentId ? "text-gray-500" : "text-gray-700"}`}>{t.title}</span>
+          <span className={`line-clamp-2 cursor-pointer hover:underline ${t.status === "done" ? "line-through text-gray-400" : t.isMilestone ? "text-purple-700 font-medium" : t.parentId ? "text-gray-500" : "text-gray-700"}`} onClick={() => setDetailTaskId(t.id)}>{t.title}</span>
           {opts.badge === "current" && <span className="text-[10px] font-bold text-white px-1.5 py-0.5 rounded-full animate-pulse flex-shrink-0" style={{ background: CURRENT_COLOR }}>● CURRENT</span>}
           {opts.badge === "next" && <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full flex-shrink-0">NEXT UP</span>}
         </div>
       ),
       bar: (
-        <div title={tooltip} onClick={() => setDetailTaskId(t.id)} className={`relative h-10 rounded cursor-pointer hover:bg-gray-50 ${dim ? "opacity-50" : ""}`}>
+        <div title={tooltip} className={`relative h-10 rounded ${dim ? "opacity-50" : ""}`}>
           {renderDecorations()}
           <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 bg-gray-100 rounded" />
           {planL !== null && planR !== null && (
