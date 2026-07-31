@@ -2051,7 +2051,7 @@ function FinanceTab({ projectId, bg }: {
                           inputClass="w-28 text-right text-sm" textClass="font-semibold tabular-nums text-gray-900 block" />
                       </div>
                       <div className="text-right">
-                        <p className="text-xs text-gray-400 mb-0.5">Committed</p>
+                        <p className="text-xs text-gray-400 mb-0.5">PO</p>
                         <span className={`font-semibold tabular-nums ${supplier.isOver ? "text-red-600" : "text-amber-600"}`}>
                           {fmtMoney(supplier.poTotal)}
                         </span>
@@ -2117,7 +2117,7 @@ function FinanceTab({ projectId, bg }: {
                           {supplier.pos.length > 0 && (
                             <tfoot className="border-t border-blue-100 bg-blue-50/40">
                               <tr>
-                                <td colSpan={2} className="px-4 py-1.5 text-xs font-medium text-blue-700">Total committed</td>
+                                <td colSpan={2} className="px-4 py-1.5 text-xs font-medium text-blue-700">Total PO</td>
                                 <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-sm text-blue-700">{fmtMoney(supplier.poTotal)}</td>
                                 <td></td>
                               </tr>
