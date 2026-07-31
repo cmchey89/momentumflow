@@ -1860,9 +1860,6 @@ function FinanceTab({ projectId, bg }: {
                 <span className="text-sm text-gray-300 group-hover:text-gray-400">✎</span>
               </button>
             )}
-            {totalWoValue > 0 && (
-              <span className="text-sm text-gray-400">{((claimedToDate / totalWoValue) * 100).toFixed(1)}% of contract</span>
-            )}
           </div>
         </div>
 
