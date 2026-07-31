@@ -574,6 +574,7 @@ export default function ProjectDetailPage() {
           stages={stages} tasks={tasks} comments={comments} submitRemark={submitRemark}
           updateRemark={updateRemark} deleteRemark={deleteRemark}
           openTasks={openTasks} toggleOpen={toggleOpen}
+          projectId={id}
         />
       )}
 
@@ -692,9 +693,30 @@ function BackgroundTab(props: {
   updateRemark: (commentId: string, text: string) => void;
   deleteRemark: (commentId: string) => void;
   openTasks: Set<string>; toggleOpen: (id: string) => void;
+  projectId: string;
 }) {
-  const { bg, bgForm, setBgForm, editing, setEditing, save, files, addFile, deleteFile, stages, tasks, comments, submitRemark, updateRemark, deleteRemark, openTasks, toggleOpen } = props;
+  const { bg, bgForm, setBgForm, editing, setEditing, save, files, addFile, deleteFile, stages, tasks, comments, submitRemark, updateRemark, deleteRemark, openTasks, toggleOpen, projectId } = props;
   const [notesEditMode, setNotesEditMode] = useState(false);
+  const [finance, setFinance] = useState<FinanceData | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/finance`).then(r => r.json()).then(setFinance);
+  }, [projectId]);
+
+  const financeSummary = (() => {
+    const wos = finance?.workOrders ?? [];
+    const conPos = finance?.contractorPos ?? [];
+    const contractorsList = finance?.contractors ?? [];
+    const payments = finance?.payments ?? [];
+    const totalWoValue = wos.filter(w => w.status === "active").reduce((s, w) => s + Number(w.contractValue), 0);
+    const totalPoValue = conPos.reduce((s, p) => s + Number(p.poValue), 0);
+    const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
+    const totalAllocatedBudget = contractorsList.reduce((s, c) => s + Number(c.allocatedBudget ?? 0), 0);
+    const claimedToDate = Number(bg?.claimedToDate ?? 0);
+    const grossProfit = totalWoValue - totalPoValue;
+    return { totalWoValue, totalPoValue, totalPaid, totalAllocatedBudget, claimedToDate, grossProfit };
+  })();
+
   return (
     <div>
       <div className="grid grid-cols-2 gap-4 mb-6">
@@ -716,7 +738,6 @@ function BackgroundTab(props: {
             <div className="space-y-2">
               <input value={bgForm.client ?? ""} onChange={e => setBgForm({ ...bgForm, client: e.target.value })} placeholder="Client" className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1" />
               <input value={bgForm.poNumber ?? ""} onChange={e => setBgForm({ ...bgForm, poNumber: e.target.value })} placeholder="PO number" className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1" />
-              <input type="number" value={bgForm.poValue ?? ""} onChange={e => setBgForm({ ...bgForm, poValue: e.target.value ? Number(e.target.value) : null })} placeholder="PO value ($)" className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1" />
               <div className="flex gap-2">
                 <input type="date" value={bgForm.targetStart ?? ""} onChange={e => setBgForm({ ...bgForm, targetStart: e.target.value })} className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1" />
                 <input type="date" value={bgForm.targetEnd ?? ""} onChange={e => setBgForm({ ...bgForm, targetEnd: e.target.value })} className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1" />
@@ -730,10 +751,39 @@ function BackgroundTab(props: {
             <div onDoubleClick={() => setEditing(true)} title="Double-click to edit" className="text-sm space-y-1 cursor-text hover:bg-yellow-50 rounded px-1 -mx-1">
               <Row label="Client" value={bg?.client} />
               <Row label="PO no." value={bg?.poNumber} />
-              <Row label="PO value" value={bg?.poValue ? fmtMoney(bg.poValue) : null} />
               <Row label="Target" value={bg?.targetStart ? `${fmtDate(bg.targetStart)} – ${fmtDate(bg.targetEnd)}` : null} />
             </div>
           )}
+        </div>
+      </div>
+
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6">
+        <p className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Finance summary <span className="font-normal normal-case text-gray-400">— live from Finance tab</span></p>
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Contract Value</p>
+            <p className="text-base font-semibold tabular-nums text-gray-900">{fmtMoney(financeSummary.totalWoValue)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Claimed to Date</p>
+            <p className="text-base font-semibold tabular-nums text-blue-600">{fmtMoney(financeSummary.claimedToDate)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Allocated Budget</p>
+            <p className="text-base font-semibold tabular-nums text-gray-900">{fmtMoney(financeSummary.totalAllocatedBudget)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Total PO</p>
+            <p className={`text-base font-semibold tabular-nums ${financeSummary.totalPoValue > financeSummary.totalAllocatedBudget && financeSummary.totalAllocatedBudget > 0 ? "text-red-600" : "text-amber-600"}`}>{fmtMoney(financeSummary.totalPoValue)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Paid to Suppliers</p>
+            <p className="text-base font-semibold tabular-nums text-orange-600">{fmtMoney(financeSummary.totalPaid)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Gross Profit</p>
+            <p className={`text-base font-semibold tabular-nums ${financeSummary.grossProfit >= 0 ? "text-green-700" : "text-red-600"}`}>{fmtMoney(financeSummary.grossProfit)}</p>
+          </div>
         </div>
       </div>
 
