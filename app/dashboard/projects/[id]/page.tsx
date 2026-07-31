@@ -1758,6 +1758,7 @@ function FinanceTab({ projectId, bg }: {
   const [showWoForm, setShowWoForm] = useState(false);
   const [showSupplierForm, setShowSupplierForm] = useState(false);
   const [showPoForm, setShowPoForm] = useState<string | null>(null); // contractorId
+  const [showClaimForm, setShowClaimForm] = useState<{ contractorId: string; pos: ContractorPo[] } | null>(null);
   const [editingClaimed, setEditingClaimed] = useState(false);
   const [claimedInput, setClaimedInput] = useState(bg?.claimedToDate ?? "0");
 
@@ -1770,17 +1771,27 @@ function FinanceTab({ projectId, bg }: {
   const wos = data?.workOrders ?? [];
   const conPos = data?.contractorPos ?? [];
   const contractors = data?.contractors ?? [];
+  const payments = data?.payments ?? [];
 
   const totalWoValue = wos.filter(w => w.status === "active").reduce((s, w) => s + Number(w.contractValue), 0);
   const claimedToDate = Number(bg?.claimedToDate ?? claimedInput ?? 0);
-  const totalCommittedCost = contractors.reduce((s, c) => s + Number(c.allocatedBudget ?? 0), 0);
-  const grossProfit = totalWoValue - totalCommittedCost;
+  const totalPoValue = conPos.reduce((s, p) => s + Number(p.poValue), 0);
+  const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
+  const grossProfit = totalWoValue - totalPoValue;
+
+  const paymentsByPoId: Record<string, PoPayment[]> = {};
+  for (const pay of payments) {
+    if (!paymentsByPoId[pay.poId]) paymentsByPoId[pay.poId] = [];
+    paymentsByPoId[pay.poId].push(pay);
+  }
 
   const supplierGroups = contractors.map(c => {
     const pos = conPos.filter(p => p.contractorId === c.id);
     const poTotal = pos.reduce((s, p) => s + Number(p.poValue), 0);
     const budget = Number(c.allocatedBudget ?? 0);
-    return { ...c, pos, poTotal, remaining: budget - poTotal, isOver: poTotal > budget && budget > 0 };
+    const supplierPayments = pos.flatMap(p => paymentsByPoId[p.id] ?? []);
+    const totalPaidToSupplier = supplierPayments.reduce((s, p) => s + Number(p.amount), 0);
+    return { ...c, pos, poTotal, remaining: budget - poTotal, isOver: poTotal > budget && budget > 0, payments: supplierPayments, totalPaidToSupplier };
   });
 
   const toggleSupplier = (id: string) =>
@@ -1825,6 +1836,9 @@ function FinanceTab({ projectId, bg }: {
     if (!confirm("Delete this PO?")) return;
     await fetch(`/api/finance/pos/${id}`, { method: "DELETE" }); load();
   };
+  const deletePayment = async (id: string) => {
+    await fetch(`/api/finance/po-payments/${id}`, { method: "DELETE" }); load();
+  };
   const patchContractor = async (contractorId: string, patch: Record<string, unknown>) => {
     await fetch(`/api/finance/contractors/${contractorId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
@@ -1865,11 +1879,17 @@ function FinanceTab({ projectId, bg }: {
 
         {/* Right: Supplier / Cost side */}
         <div className="flex items-stretch gap-px bg-gray-200 border border-gray-200 rounded-xl overflow-hidden">
-          {/* Committed Cost */}
+          {/* Total PO */}
           <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
-            <span className="text-sm text-gray-400 uppercase tracking-wide">Committed Cost</span>
-            <span className="text-lg font-semibold tabular-nums text-amber-600">{fmtMoney(totalCommittedCost)}</span>
-            <span className="text-sm text-gray-400">{contractors.length} supplier{contractors.length !== 1 ? "s" : ""}</span>
+            <span className="text-sm text-gray-400 uppercase tracking-wide">Total PO</span>
+            <span className="text-lg font-semibold tabular-nums text-amber-600">{fmtMoney(totalPoValue)}</span>
+            <span className="text-sm text-gray-400">{conPos.length} PO{conPos.length !== 1 ? "s" : ""}</span>
+          </div>
+          {/* Paid to Suppliers */}
+          <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
+            <span className="text-sm text-gray-400 uppercase tracking-wide">Paid to Suppliers</span>
+            <span className="text-lg font-semibold tabular-nums text-orange-600">{fmtMoney(totalPaid)}</span>
+            <span className="text-sm text-gray-400">{totalPoValue > 0 ? `${((totalPaid / totalPoValue) * 100).toFixed(0)}% of PO` : "—"}</span>
           </div>
           {/* Gross Profit */}
           <div className={`flex flex-col justify-center px-4 py-2.5 gap-0.5 flex-1 min-w-0 ${grossProfit >= 0 ? "bg-green-50" : "bg-red-50"}`}>
@@ -2056,6 +2076,51 @@ function FinanceTab({ projectId, bg }: {
                           <Plus className="w-3.5 h-3.5" /> Add PO
                         </button>
                       </div>
+
+                      {/* Claims / Payments section */}
+                      <div className="border-t-2 border-gray-200">
+                        <div className="flex items-center justify-between px-4 py-2 bg-gray-50">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Payment Claims</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm text-gray-500 tabular-nums">Paid: <span className="font-semibold text-orange-600">{fmtMoney(supplier.totalPaidToSupplier)}</span></span>
+                            <button onClick={() => setShowClaimForm({ contractorId: supplier.id, pos: supplier.pos })}
+                              className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
+                              <Plus className="w-3.5 h-3.5" /> Add Claim
+                            </button>
+                          </div>
+                        </div>
+                        {supplier.payments.length > 0 ? (
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-xs text-gray-400 uppercase tracking-wide bg-gray-50/50">
+                                <th className="text-left px-4 py-1.5">Date</th>
+                                <th className="text-left px-3 py-1.5">Invoice Ref</th>
+                                <th className="text-left px-3 py-1.5">Against PO</th>
+                                <th className="text-right px-3 py-1.5">Amount</th>
+                                <th className="w-6 px-2 py-1.5"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {supplier.payments.map(pay => {
+                                const linkedPo = supplier.pos.find(p => p.id === pay.poId);
+                                return (
+                                  <tr key={pay.id} className="border-t border-gray-100 hover:bg-white">
+                                    <td className="px-4 py-2 text-gray-600">{pay.paymentDate || <span className="text-gray-300">—</span>}</td>
+                                    <td className="px-3 py-2 font-mono text-gray-600">{pay.invoiceRef || <span className="text-gray-300">—</span>}</td>
+                                    <td className="px-3 py-2 text-gray-400 text-xs">{linkedPo?.poNumber ?? "—"}</td>
+                                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-orange-600">{fmtMoney(Number(pay.amount))}</td>
+                                    <td className="px-2 py-2">
+                                      <button onClick={() => deletePayment(pay.id)} className="text-gray-300 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <p className="px-4 py-3 text-sm text-gray-400">No payment claims recorded.</p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -2083,6 +2148,11 @@ function FinanceTab({ projectId, bg }: {
       {showPoForm && (
         <Modal title="Add PO" onClose={() => setShowPoForm(null)}>
           <AddPoForm contractorId={showPoForm} onSave={b => { postFinance({ kind: "contractor_po", contractorId: showPoForm, ...b }); setShowPoForm(null); }} />
+        </Modal>
+      )}
+      {showClaimForm && (
+        <Modal title="Add Payment Claim" onClose={() => setShowClaimForm(null)}>
+          <AddClaimForm pos={showClaimForm.pos} onSave={b => { postFinance({ kind: "po_payment", ...b }); setShowClaimForm(null); }} />
         </Modal>
       )}
     </div>
@@ -2137,6 +2207,27 @@ function AddPoForm({ contractorId, onSave }: { contractorId: string; onSave: (b:
       <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-3" />
       <button onClick={() => { if (poNumber && poValue) onSave({ contractorId, poNumber, scope: scope || null, poValue, issueDate: issueDate || null }); }}
         className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg w-full">Add PO</button>
+    </>
+  );
+}
+
+function AddClaimForm({ pos, onSave }: { pos: ContractorPo[]; onSave: (b: Record<string, unknown>) => void }) {
+  const [poId, setPoId] = useState(pos[0]?.id ?? "");
+  const [amount, setAmount] = useState("");
+  const [paymentDate, setPaymentDate] = useState("");
+  const [invoiceRef, setInvoiceRef] = useState("");
+  return (
+    <>
+      {pos.length > 1 && (
+        <select value={poId} onChange={e => setPoId(e.target.value)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2">
+          {pos.map(p => <option key={p.id} value={p.id}>{p.poNumber}{p.scope ? ` — ${p.scope}` : ""}</option>)}
+        </select>
+      )}
+      <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Claim amount ($)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <input value={invoiceRef} onChange={e => setInvoiceRef(e.target.value)} placeholder="Invoice reference (optional)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-3" />
+      <button onClick={() => { if (amount && poId) onSave({ poId, amount, paymentDate: paymentDate || null, invoiceRef: invoiceRef || null, notes: null }); }}
+        className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg w-full">Add Claim</button>
     </>
   );
 }
