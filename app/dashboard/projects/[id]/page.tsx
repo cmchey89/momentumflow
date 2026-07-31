@@ -1920,6 +1920,10 @@ function FinanceTab({ projectId, bg }: {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
     }); load();
   };
+  const deleteContractor = async (contractorId: string) => {
+    if (!confirm("Delete this supplier? This will also delete all its POs and payment claims.")) return;
+    await fetch(`/api/finance/contractors/${contractorId}`, { method: "DELETE" }); load();
+  };
 
   return (
     <div className="flex flex-col gap-3" style={{ height: "calc(100vh - 210px)" }}>
@@ -2120,6 +2124,9 @@ function FinanceTab({ projectId, bg }: {
                           {supplier.isOver ? `−${fmtMoney(-supplier.remaining)}` : fmtMoney(supplier.remaining)}
                         </span>
                       </div>
+                      <button onClick={() => deleteContractor(supplier.id)} className="text-gray-300 hover:text-red-400">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
 
