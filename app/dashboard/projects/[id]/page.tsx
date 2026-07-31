@@ -1833,50 +1833,57 @@ function FinanceTab({ projectId, bg }: {
 
   return (
     <div className="flex flex-col gap-3" style={{ height: "calc(100vh - 210px)" }}>
-      {/* Summary bar — 4 tiles */}
-      <div className="flex-shrink-0 flex flex-wrap items-stretch gap-px bg-gray-200 border border-gray-200 rounded-xl overflow-hidden">
-        {/* Contract Value */}
-        <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
-          <span className="text-sm text-gray-400 uppercase tracking-wide">Contract Value</span>
-          <span className="text-lg font-semibold tabular-nums text-gray-900">{fmtMoney(totalWoValue)}</span>
-          <span className="text-sm text-gray-400">{wos.filter(w => w.status === "active").length} active WO</span>
+      {/* Summary bar — mirrors the 5fr/7fr column split below */}
+      <div className="flex-shrink-0 grid grid-cols-[5fr_7fr] gap-4">
+        {/* Left: Revenue / WO / Claim side */}
+        <div className="flex items-stretch gap-px bg-gray-200 border border-gray-200 rounded-xl overflow-hidden">
+          {/* Contract Value */}
+          <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
+            <span className="text-sm text-gray-400 uppercase tracking-wide">Contract Value</span>
+            <span className="text-lg font-semibold tabular-nums text-gray-900">{fmtMoney(totalWoValue)}</span>
+            <span className="text-sm text-gray-400">{wos.filter(w => w.status === "active").length} active WO</span>
+          </div>
+          {/* Claimed to Date */}
+          <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
+            <span className="text-sm text-gray-400 uppercase tracking-wide">Claimed to Date</span>
+            {editingClaimed ? (
+              <span className="flex items-center gap-1">
+                <input type="number" value={claimedInput} onChange={e => setClaimedInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") saveClaimed(); if (e.key === "Escape") setEditingClaimed(false); }}
+                  className="w-28 text-base border border-blue-300 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-blue-400" autoFocus />
+                <button onClick={saveClaimed} className="text-sm text-blue-600 font-medium">Save</button>
+                <button onClick={() => setEditingClaimed(false)} className="text-sm text-gray-400">×</button>
+              </span>
+            ) : (
+              <button onClick={() => setEditingClaimed(true)} className="text-left flex items-center gap-1.5 group">
+                <span className="text-lg font-semibold tabular-nums text-blue-600">{fmtMoney(claimedToDate)}</span>
+                <span className="text-sm text-gray-300 group-hover:text-gray-400">✎</span>
+              </button>
+            )}
+            {totalWoValue > 0 && (
+              <span className="text-sm text-gray-400">{((claimedToDate / totalWoValue) * 100).toFixed(1)}% of contract</span>
+            )}
+          </div>
         </div>
-        {/* Claimed to Date */}
-        <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
-          <span className="text-sm text-gray-400 uppercase tracking-wide">Claimed to Date</span>
-          {editingClaimed ? (
-            <span className="flex items-center gap-1">
-              <input type="number" value={claimedInput} onChange={e => setClaimedInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") saveClaimed(); if (e.key === "Escape") setEditingClaimed(false); }}
-                className="w-28 text-base border border-blue-300 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-blue-400" autoFocus />
-              <button onClick={saveClaimed} className="text-sm text-blue-600 font-medium">Save</button>
-              <button onClick={() => setEditingClaimed(false)} className="text-sm text-gray-400">×</button>
-            </span>
-          ) : (
-            <button onClick={() => setEditingClaimed(true)} className="text-left flex items-center gap-1.5 group">
-              <span className="text-lg font-semibold tabular-nums text-blue-600">{fmtMoney(claimedToDate)}</span>
-              <span className="text-sm text-gray-300 group-hover:text-gray-400">✎</span>
-            </button>
-          )}
-          {totalWoValue > 0 && (
-            <span className="text-sm text-gray-400">{((claimedToDate / totalWoValue) * 100).toFixed(1)}% of contract</span>
-          )}
-        </div>
-        {/* Total Committed Cost */}
-        <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
-          <span className="text-sm text-gray-400 uppercase tracking-wide">Committed Cost</span>
-          <span className="text-lg font-semibold tabular-nums text-amber-600">{fmtMoney(totalCommittedCost)}</span>
-          <span className="text-sm text-gray-400">{contractors.length} supplier{contractors.length !== 1 ? "s" : ""}</span>
-        </div>
-        {/* Gross Profit */}
-        <div className={`flex flex-col justify-center px-4 py-2.5 gap-0.5 flex-1 min-w-0 ${grossProfit >= 0 ? "bg-green-50" : "bg-red-50"}`}>
-          <span className="text-sm text-gray-400 uppercase tracking-wide">Gross Profit</span>
-          <span className={`text-lg font-semibold tabular-nums ${grossProfit >= 0 ? "text-green-700" : "text-red-600"}`}>{fmtMoney(grossProfit)}</span>
-          {totalWoValue > 0 && (
-            <span className={`text-sm ${grossProfit >= 0 ? "text-green-500" : "text-red-400"}`}>
-              {((grossProfit / totalWoValue) * 100).toFixed(1)}% margin
-            </span>
-          )}
+
+        {/* Right: Supplier / Cost side */}
+        <div className="flex items-stretch gap-px bg-gray-200 border border-gray-200 rounded-xl overflow-hidden">
+          {/* Committed Cost */}
+          <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
+            <span className="text-sm text-gray-400 uppercase tracking-wide">Committed Cost</span>
+            <span className="text-lg font-semibold tabular-nums text-amber-600">{fmtMoney(totalCommittedCost)}</span>
+            <span className="text-sm text-gray-400">{contractors.length} supplier{contractors.length !== 1 ? "s" : ""}</span>
+          </div>
+          {/* Gross Profit */}
+          <div className={`flex flex-col justify-center px-4 py-2.5 gap-0.5 flex-1 min-w-0 ${grossProfit >= 0 ? "bg-green-50" : "bg-red-50"}`}>
+            <span className="text-sm text-gray-400 uppercase tracking-wide">Gross Profit</span>
+            <span className={`text-lg font-semibold tabular-nums ${grossProfit >= 0 ? "text-green-700" : "text-red-600"}`}>{fmtMoney(grossProfit)}</span>
+            {totalWoValue > 0 && (
+              <span className={`text-sm ${grossProfit >= 0 ? "text-green-500" : "text-red-400"}`}>
+                {((grossProfit / totalWoValue) * 100).toFixed(1)}% margin
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
