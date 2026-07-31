@@ -86,6 +86,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json(wo);
   }
 
+  if (body.kind === "contractor") {
+    const [con] = await db.insert(contractors).values({
+      projectId: id,
+      name: body.name,
+      scope: body.scope || null,
+      allocatedBudget: String(body.allocatedBudget ?? 0),
+    }).returning();
+    return NextResponse.json(con);
+  }
+
   if (body.kind === "contractor_po") {
     let contractorId = body.contractorId;
     if (!contractorId && body.contractorName) {

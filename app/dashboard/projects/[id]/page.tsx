@@ -56,7 +56,7 @@ interface PlanTask {
 interface Comment { id: string; taskId: string; authorName: string; text: string | null; imageUrl: string | null; createdAt: string }
 
 type ClaimStatus = "pending" | "submitted" | "approved" | "paid";
-interface Contractor { id: string; name: string; scope: string | null }
+interface Contractor { id: string; name: string; scope: string | null; allocatedBudget: string }
 interface ContractorClaim { id: string; contractorId: string; stageId: string | null; amount: number; invoiceNo: string | null; status: ClaimStatus }
 interface ClientClaim { id: string; stageId: string | null; amount: number; invoiceNo: string | null; status: ClaimStatus }
 
@@ -1754,11 +1754,10 @@ function FinanceTab({ projectId, bg }: {
   projectId: string; bg: Background | null;
 }) {
   const [data, setData] = useState<FinanceData | null>(null);
-  const [expandedPos, setExpandedPos] = useState<Set<string>>(new Set());
+  const [expandedSuppliers, setExpandedSuppliers] = useState<Set<string>>(new Set());
   const [showWoForm, setShowWoForm] = useState(false);
-  const [showPoForm, setShowPoForm] = useState(false);
-  const [showLineItemForm, setShowLineItemForm] = useState<string | null>(null);
-  const [showPaymentForm, setShowPaymentForm] = useState<string | null>(null);
+  const [showSupplierForm, setShowSupplierForm] = useState(false);
+  const [showPoForm, setShowPoForm] = useState<string | null>(null); // contractorId
   const [editingClaimed, setEditingClaimed] = useState(false);
   const [claimedInput, setClaimedInput] = useState(bg?.claimedToDate ?? "0");
 
@@ -1770,30 +1769,22 @@ function FinanceTab({ projectId, bg }: {
 
   const wos = data?.workOrders ?? [];
   const conPos = data?.contractorPos ?? [];
-  const lineItems = data?.lineItems ?? [];
-  const payments = data?.payments ?? [];
   const contractors = data?.contractors ?? [];
 
   const totalWoValue = wos.filter(w => w.status === "active").reduce((s, w) => s + Number(w.contractValue), 0);
-  const totalPoValue = conPos.reduce((s, p) => s + Number(p.poValue), 0);
-  const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
   const claimedToDate = Number(bg?.claimedToDate ?? claimedInput ?? 0);
+  const totalCommittedCost = contractors.reduce((s, c) => s + Number(c.allocatedBudget ?? 0), 0);
+  const grossProfit = totalWoValue - totalCommittedCost;
 
-  const poPaymentsMap: Record<string, PoPayment[]> = {};
-  const poLineItemsMap: Record<string, PoLineItem[]> = {};
-  const poPaidMap: Record<string, number> = {};
-  for (const po of conPos) {
-    poPaymentsMap[po.id] = payments.filter(p => p.poId === po.id);
-    poLineItemsMap[po.id] = lineItems.filter(li => li.poId === po.id);
-    poPaidMap[po.id] = poPaymentsMap[po.id].reduce((s, p) => s + Number(p.amount), 0);
-  }
+  const supplierGroups = contractors.map(c => {
+    const pos = conPos.filter(p => p.contractorId === c.id);
+    const poTotal = pos.reduce((s, p) => s + Number(p.poValue), 0);
+    const budget = Number(c.allocatedBudget ?? 0);
+    return { ...c, pos, poTotal, remaining: budget - poTotal, isOver: poTotal > budget && budget > 0 };
+  });
 
-  const savings = conPos
-    .filter(po => po.isCompleted)
-    .reduce((s, po) => s + Math.max(0, Number(po.poValue) - (poPaidMap[po.id] ?? 0)), 0);
-
-  const togglePo = (id: string) =>
-    setExpandedPos(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleSupplier = (id: string) =>
+    setExpandedSuppliers(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const saveClaimed = async () => {
     if (!bg) return;
@@ -1831,24 +1822,8 @@ function FinanceTab({ projectId, bg }: {
     }); load();
   };
   const deletePo = async (id: string) => {
-    if (!confirm("Delete this PO and all its payments?")) return;
+    if (!confirm("Delete this PO?")) return;
     await fetch(`/api/finance/pos/${id}`, { method: "DELETE" }); load();
-  };
-  const patchLineItem = async (id: string, patch: Record<string, unknown>) => {
-    await fetch(`/api/finance/po-items/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
-    }); load();
-  };
-  const deleteLineItem = async (id: string) => {
-    await fetch(`/api/finance/po-items/${id}`, { method: "DELETE" }); load();
-  };
-  const deletePayment = async (id: string) => {
-    await fetch(`/api/finance/po-payments/${id}`, { method: "DELETE" }); load();
-  };
-  const patchPayment = async (id: string, patch: Record<string, unknown>) => {
-    await fetch(`/api/finance/po-payments/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
-    }); load();
   };
   const patchContractor = async (contractorId: string, patch: Record<string, unknown>) => {
     await fetch(`/api/finance/contractors/${contractorId}`, {
@@ -1858,55 +1833,49 @@ function FinanceTab({ projectId, bg }: {
 
   return (
     <div className="flex flex-col gap-3" style={{ height: "calc(100vh - 210px)" }}>
-      {/* Compact summary bar */}
-      <div className="flex-shrink-0 flex flex-wrap items-stretch gap-px bg-gray-200 border border-gray-200 rounded-xl overflow-hidden text-lg">
+      {/* Summary bar — 4 tiles */}
+      <div className="flex-shrink-0 flex flex-wrap items-stretch gap-px bg-gray-200 border border-gray-200 rounded-xl overflow-hidden">
         {/* Contract Value */}
         <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
-          <span className="text-lg text-gray-400 uppercase tracking-wide">Contract Value</span>
-          <span className="font-semibold tabular-nums text-gray-900">{fmtMoney(totalWoValue)}</span>
-          <span className="text-lg text-gray-400">{wos.filter(w => w.status === "active").length} active WO</span>
+          <span className="text-sm text-gray-400 uppercase tracking-wide">Contract Value</span>
+          <span className="text-lg font-semibold tabular-nums text-gray-900">{fmtMoney(totalWoValue)}</span>
+          <span className="text-sm text-gray-400">{wos.filter(w => w.status === "active").length} active WO</span>
         </div>
         {/* Claimed to Date */}
         <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
-          <span className="text-lg text-gray-400 uppercase tracking-wide">Claimed to Date</span>
+          <span className="text-sm text-gray-400 uppercase tracking-wide">Claimed to Date</span>
           {editingClaimed ? (
             <span className="flex items-center gap-1">
               <input type="number" value={claimedInput} onChange={e => setClaimedInput(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") saveClaimed(); if (e.key === "Escape") setEditingClaimed(false); }}
-                className="w-28 text-lg border border-blue-300 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-blue-400" autoFocus />
-              <button onClick={saveClaimed} className="text-base text-blue-600 font-medium">Save</button>
-              <button onClick={() => setEditingClaimed(false)} className="text-base text-gray-400">×</button>
+                className="w-28 text-base border border-blue-300 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-blue-400" autoFocus />
+              <button onClick={saveClaimed} className="text-sm text-blue-600 font-medium">Save</button>
+              <button onClick={() => setEditingClaimed(false)} className="text-sm text-gray-400">×</button>
             </span>
           ) : (
             <button onClick={() => setEditingClaimed(true)} className="text-left flex items-center gap-1.5 group">
-              <span className="font-semibold tabular-nums text-blue-600">{fmtMoney(claimedToDate)}</span>
-              <span className="text-lg text-gray-300 group-hover:text-gray-400">✎</span>
+              <span className="text-lg font-semibold tabular-nums text-blue-600">{fmtMoney(claimedToDate)}</span>
+              <span className="text-sm text-gray-300 group-hover:text-gray-400">✎</span>
             </button>
           )}
           {totalWoValue > 0 && (
-            <span className="text-lg text-gray-400">
-              {((claimedToDate / totalWoValue) * 100).toFixed(1)}% of contract
-            </span>
+            <span className="text-sm text-gray-400">{((claimedToDate / totalWoValue) * 100).toFixed(1)}% of contract</span>
           )}
         </div>
-        {/* PO Budget */}
+        {/* Total Committed Cost */}
         <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
-          <span className="text-lg text-gray-400 uppercase tracking-wide">PO Budget</span>
-          <span className="font-semibold tabular-nums text-gray-900">{fmtMoney(totalPoValue)}</span>
-          <span className="text-lg text-gray-400">{conPos.length} PO{conPos.length !== 1 ? "s" : ""}</span>
+          <span className="text-sm text-gray-400 uppercase tracking-wide">Committed Cost</span>
+          <span className="text-lg font-semibold tabular-nums text-amber-600">{fmtMoney(totalCommittedCost)}</span>
+          <span className="text-sm text-gray-400">{contractors.length} supplier{contractors.length !== 1 ? "s" : ""}</span>
         </div>
-        {/* Paid Out */}
-        <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
-          <span className="text-lg text-gray-400 uppercase tracking-wide">Paid Out</span>
-          <span className="font-semibold tabular-nums text-amber-600">{fmtMoney(totalPaid)}</span>
-          <span className="text-lg text-gray-400">{totalPoValue > 0 ? `${((totalPaid / totalPoValue) * 100).toFixed(1)}% of budget` : "—"}</span>
-        </div>
-        {/* Balance */}
-        <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
-          <span className="text-lg text-gray-400 uppercase tracking-wide">Balance</span>
-          <span className="font-semibold tabular-nums text-gray-700">{fmtMoney(totalPoValue - totalPaid)}</span>
-          {savings > 0 && (
-            <span className="text-lg text-orange-500">incl. {fmtMoney(savings)} savings</span>
+        {/* Gross Profit */}
+        <div className={`flex flex-col justify-center px-4 py-2.5 gap-0.5 flex-1 min-w-0 ${grossProfit >= 0 ? "bg-green-50" : "bg-red-50"}`}>
+          <span className="text-sm text-gray-400 uppercase tracking-wide">Gross Profit</span>
+          <span className={`text-lg font-semibold tabular-nums ${grossProfit >= 0 ? "text-green-700" : "text-red-600"}`}>{fmtMoney(grossProfit)}</span>
+          {totalWoValue > 0 && (
+            <span className={`text-sm ${grossProfit >= 0 ? "text-green-500" : "text-red-400"}`}>
+              {((grossProfit / totalWoValue) * 100).toFixed(1)}% margin
+            </span>
           )}
         </div>
       </div>
@@ -1917,15 +1886,15 @@ function FinanceTab({ projectId, bg }: {
         {/* Left: Work Orders */}
         <div className="flex flex-col min-h-0 border border-gray-200 rounded-xl overflow-hidden bg-white">
           <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50">
-            <h3 className="text-base font-semibold text-gray-500 uppercase tracking-wide">Revenue — Work Orders</h3>
-            <button onClick={() => setShowWoForm(true)} className="flex items-center gap-1 text-base text-blue-600 hover:text-blue-700">
-              <Plus className="w-3 h-3" /> Add WO
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Revenue — Work Orders</h3>
+            <button onClick={() => setShowWoForm(true)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
+              <Plus className="w-3.5 h-3.5" /> Add WO
             </button>
           </div>
           <div className="flex-1 overflow-y-auto">
-            <table className="w-full text-lg">
+            <table className="w-full text-base">
               <thead className="sticky top-0 bg-gray-50 z-10">
-                <tr className="text-base text-gray-400 uppercase tracking-wide">
+                <tr className="text-sm text-gray-400 uppercase tracking-wide">
                   <th className="text-left px-3 py-2">WO #</th>
                   <th className="text-left px-3 py-2">Description</th>
                   <th className="text-left px-3 py-2">Type</th>
@@ -1939,32 +1908,31 @@ function FinanceTab({ projectId, bg }: {
                   <tr key={wo.id} className="border-t border-gray-100 hover:bg-gray-50/50">
                     <td className="px-3 py-2">
                       <EditableCell value={wo.woNumber} onSave={v => patchWo(wo.id, { woNumber: v })}
-                        inputClass="w-20 font-mono text-base" textClass="font-mono text-base text-gray-700" />
+                        inputClass="w-20 font-mono" textClass="font-mono text-gray-700" />
                     </td>
                     <td className="px-3 py-2">
                       <EditableCell value={wo.description || ""} placeholder="Add description"
-                        onSave={v => patchWo(wo.id, { description: v })}
-                        inputClass="w-40" textClass="text-gray-700 text-base" />
+                        onSave={v => patchWo(wo.id, { description: v })} inputClass="w-36" textClass="text-gray-700" />
                     </td>
                     <td className="px-3 py-2">
                       <select value={wo.type} onChange={e => patchWo(wo.id, { type: e.target.value })}
-                        className={`text-base rounded-full px-2 py-0.5 border-none cursor-pointer outline-none ${wo.type === "original" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700"}`}>
+                        className={`text-sm rounded-full px-2 py-0.5 border-none cursor-pointer outline-none ${wo.type === "original" ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700"}`}>
                         <option value="original">Original</option>
                         <option value="variation">Variation</option>
                       </select>
                     </td>
                     <td className="px-3 py-2">
                       <select value={wo.status} onChange={e => patchWo(wo.id, { status: e.target.value })}
-                        className={`text-base rounded-full px-2 py-0.5 border-none outline-none cursor-pointer ${wo.status === "active" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                        className={`text-sm rounded-full px-2 py-0.5 border-none outline-none cursor-pointer ${wo.status === "active" ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}>
                         <option value="active">Active</option>
                         <option value="superseded">Superseded</option>
                       </select>
                     </td>
                     <td className="px-3 py-2 text-right">
                       <EditableCell value={wo.contractValue}
-                        displayValue={<span className="font-medium tabular-nums text-base">{fmtMoney(Number(wo.contractValue))}</span>}
+                        displayValue={<span className="font-medium tabular-nums">{fmtMoney(Number(wo.contractValue))}</span>}
                         onSave={v => patchWo(wo.id, { contractValue: v })} type="number"
-                        inputClass="w-24 text-right" textClass="font-medium tabular-nums text-base" />
+                        inputClass="w-24 text-right" textClass="font-medium tabular-nums" />
                     </td>
                     <td className="px-2 py-2">
                       <button onClick={() => deleteWo(wo.id)} className="text-gray-300 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
@@ -1972,14 +1940,14 @@ function FinanceTab({ projectId, bg }: {
                   </tr>
                 ))}
                 {wos.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-base">No work orders yet.</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">No work orders yet.</td></tr>
                 )}
               </tbody>
               {wos.length > 0 && (
                 <tfoot className="sticky bottom-0 bg-gray-50 border-t border-gray-200">
                   <tr>
-                    <td colSpan={4} className="px-3 py-2 text-base font-medium text-gray-500">Total active</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-base">{fmtMoney(totalWoValue)}</td>
+                    <td colSpan={4} className="px-3 py-2 text-sm font-medium text-gray-500">Total active</td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmtMoney(totalWoValue)}</td>
                     <td></td>
                   </tr>
                 </tfoot>
@@ -1988,206 +1956,115 @@ function FinanceTab({ projectId, bg }: {
           </div>
         </div>
 
-        {/* Right: Contractor POs */}
+        {/* Right: Suppliers grouped */}
         <div className="flex flex-col min-h-0 border border-gray-200 rounded-xl overflow-hidden bg-white">
           <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50">
-            <h3 className="text-base font-semibold text-gray-500 uppercase tracking-wide">Supplier / Contractor POs</h3>
-            <button onClick={() => setShowPoForm(true)} className="flex items-center gap-1 text-base text-blue-600 hover:text-blue-700">
-              <Plus className="w-3 h-3" /> Add PO
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Supplier / Contractor Cost</h3>
+            <button onClick={() => setShowSupplierForm(true)} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
+              <Plus className="w-3.5 h-3.5" /> Add Supplier
             </button>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
-            {conPos.map(po => {
-              const paid = poPaidMap[po.id] ?? 0;
-              const balance = Number(po.poValue) - paid;
-              const items = poLineItemsMap[po.id] ?? [];
-              const poPays = poPaymentsMap[po.id] ?? [];
-              const isOpen = expandedPos.has(po.id);
+            {supplierGroups.map(supplier => {
+              const isOpen = expandedSuppliers.has(supplier.id);
               return (
-                <div key={po.id} className="border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="flex items-center gap-2 px-3 py-2.5 bg-white hover:bg-gray-50/50 cursor-pointer select-none"
-                    onClick={() => togglePo(po.id)}>
-                    <ChevronRight className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-150 flex-shrink-0 ${isOpen ? "rotate-90" : ""}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <EditableCell value={po.contractorName}
-                          onSave={v => patchContractor(po.contractorId, { name: v })}
-                          inputClass="font-medium text-lg" textClass="font-medium text-gray-900 text-lg" />
-                        <span className="text-base text-gray-400 font-mono bg-gray-100 px-1.5 py-0.5 rounded">
-                          <EditableCell value={po.poNumber} onSave={v => patchPo(po.id, { poNumber: v })}
-                            inputClass="w-20 font-mono text-base" textClass="font-mono text-base text-gray-600" />
-                        </span>
-                        <EditableCell value={po.scope || ""} placeholder="Add scope"
-                          onSave={v => patchPo(po.id, { scope: v })}
-                          inputClass="w-36 text-base" textClass="text-base text-gray-500" />
-                      </div>
+                <div key={supplier.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                  {/* Supplier header */}
+                  <div className="flex items-center gap-2 px-3 py-3 bg-white hover:bg-gray-50/50 cursor-pointer select-none"
+                    onClick={() => toggleSupplier(supplier.id)}>
+                    <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform duration-150 flex-shrink-0 ${isOpen ? "rotate-90" : ""}`} />
+                    <div className="flex-1 min-w-0" onClick={e => e.stopPropagation()}>
+                      <EditableCell value={supplier.name}
+                        onSave={v => patchContractor(supplier.id, { name: v })}
+                        inputClass="font-semibold text-base w-48"
+                        textClass="font-semibold text-gray-900 text-base" />
                     </div>
-                    <div className="flex items-center gap-4 text-base shrink-0" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-5 shrink-0 text-sm" onClick={e => e.stopPropagation()}>
                       <div className="text-right">
-                        <p className="text-gray-400 text-lg">PO Value</p>
-                        <EditableCell value={po.poValue}
-                          displayValue={<span className="font-medium tabular-nums">{fmtMoney(Number(po.poValue))}</span>}
-                          onSave={v => patchPo(po.id, { poValue: v })} type="number"
-                          inputClass="w-22 text-right text-lg" textClass="font-medium tabular-nums block" />
+                        <p className="text-xs text-gray-400 mb-0.5">Budget</p>
+                        <EditableCell value={supplier.allocatedBudget}
+                          displayValue={<span className="font-semibold tabular-nums text-gray-900">{fmtMoney(Number(supplier.allocatedBudget))}</span>}
+                          onSave={v => patchContractor(supplier.id, { allocatedBudget: v })} type="number"
+                          inputClass="w-28 text-right text-sm" textClass="font-semibold tabular-nums text-gray-900 block" />
                       </div>
                       <div className="text-right">
-                        <p className="text-gray-400 text-lg">Paid</p>
-                        <p className="font-medium text-amber-600 tabular-nums">{fmtMoney(paid)}</p>
+                        <p className="text-xs text-gray-400 mb-0.5">Committed</p>
+                        <span className={`font-semibold tabular-nums ${supplier.isOver ? "text-red-600" : "text-amber-600"}`}>
+                          {fmtMoney(supplier.poTotal)}
+                        </span>
                       </div>
                       <div className="text-right">
-                        <p className="text-gray-400 text-lg">Balance</p>
-                        <p className={`font-medium tabular-nums ${balance > 0 ? "text-gray-700" : "text-green-600"}`}>{fmtMoney(balance)}</p>
+                        <p className="text-xs text-gray-400 mb-0.5">Remaining</p>
+                        <span className={`font-semibold tabular-nums ${supplier.isOver ? "text-red-600" : supplier.remaining === 0 ? "text-green-600" : "text-gray-700"}`}>
+                          {supplier.isOver ? `−${fmtMoney(-supplier.remaining)}` : fmtMoney(supplier.remaining)}
+                        </span>
                       </div>
-                      <button
-                        onClick={() => patchPo(po.id, { isCompleted: !po.isCompleted })}
-                        title={po.isCompleted ? "Mark as active" : "Mark as completed"}
-                        className={`text-base rounded-full px-2 py-0.5 border transition-colors ${po.isCompleted ? "bg-green-50 text-green-600 border-green-200 hover:bg-green-100" : "text-gray-300 border-gray-200 hover:text-gray-500"}`}>
-                        {po.isCompleted ? "Done" : "Active"}
-                      </button>
-                      <button onClick={() => deletePo(po.id)} className="text-gray-300 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
                     </div>
                   </div>
 
+                  {/* PO rows */}
                   {isOpen && (
-                    <div className="border-t border-gray-100 bg-gray-50/30 px-3 py-3 space-y-4">
-                      {/* Schedule of Values */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <p className="text-lg font-semibold text-gray-500 uppercase tracking-wide">Schedule of Values</p>
-                          <button onClick={() => setShowLineItemForm(po.id)} className="text-lg text-blue-600 flex items-center gap-0.5 hover:text-blue-700">
-                            <Plus className="w-2.5 h-2.5" /> Add item
-                          </button>
-                        </div>
-                        {items.length > 0 ? (
-                          <table className="w-full text-base bg-white border border-gray-100 rounded-lg overflow-hidden">
-                            <thead>
-                              <tr className="text-lg text-gray-400 bg-gray-50">
-                                <th className="text-left px-2 py-1.5">Description</th>
-                                <th className="text-left px-2 py-1.5">Unit</th>
-                                <th className="text-right px-2 py-1.5">Rate</th>
-                                <th className="text-right px-2 py-1.5">Total Qty</th>
-                                <th className="text-right px-2 py-1.5">Done</th>
-                                <th className="text-right px-2 py-1.5">Remaining</th>
-                                <th className="w-5 px-1 py-1.5"></th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {items.map(li => {
-                                const totalVal = Number(li.totalQty) * Number(li.unitRate);
-                                const doneVal = Number(li.completedQty) * Number(li.unitRate);
-                                const remaining = totalVal - doneVal;
-                                const pct = Number(li.totalQty) > 0 ? (Number(li.completedQty) / Number(li.totalQty)) * 100 : 0;
-                                return (
-                                  <tr key={li.id} className="border-t border-gray-50">
-                                    <td className="px-2 py-1.5">
-                                      <EditableCell value={li.description} onSave={v => patchLineItem(li.id, { description: v })}
-                                        inputClass="w-full" textClass="text-gray-700" />
-                                    </td>
-                                    <td className="px-2 py-1.5">
-                                      <EditableCell value={li.unit} onSave={v => patchLineItem(li.id, { unit: v })}
-                                        inputClass="w-10 text-lg" textClass="text-lg text-gray-500" />
-                                    </td>
-                                    <td className="px-2 py-1.5 text-right">
-                                      <EditableCell value={li.unitRate}
-                                        displayValue={<span className="tabular-nums">{fmtMoney(Number(li.unitRate))}</span>}
-                                        onSave={v => patchLineItem(li.id, { unitRate: v })} type="number"
-                                        inputClass="w-18 text-right" textClass="tabular-nums" />
-                                    </td>
-                                    <td className="px-2 py-1.5 text-right">
-                                      <EditableCell value={li.totalQty}
-                                        displayValue={<span className="tabular-nums">{Number(li.totalQty).toLocaleString()}</span>}
-                                        onSave={v => patchLineItem(li.id, { totalQty: v })} type="number"
-                                        inputClass="w-18 text-right" textClass="tabular-nums" />
-                                    </td>
-                                    <td className="px-2 py-1.5 text-right">
-                                      <div className="flex items-center justify-end gap-1">
-                                        <EditableCell value={li.completedQty}
-                                          onSave={v => patchLineItem(li.id, { completedQty: v })} type="number"
-                                          inputClass="w-14 text-right text-lg" textClass="tabular-nums text-gray-700" />
-                                        <span className="text-lg text-gray-400">{pct.toFixed(0)}%</span>
-                                      </div>
-                                    </td>
-                                    <td className="px-2 py-1.5 text-right tabular-nums text-amber-600">{fmtMoney(Math.round(remaining))}</td>
-                                    <td className="px-1 py-1.5">
-                                      <button onClick={() => deleteLineItem(li.id)} className="text-gray-200 hover:text-red-400"><X className="w-2.5 h-2.5" /></button>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        ) : (
-                          <p className="text-lg text-gray-400 py-1">No items yet. Add scope items to track physical progress.</p>
+                    <div className="border-t border-gray-100 bg-gray-50/20">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-xs text-gray-400 uppercase tracking-wide bg-gray-50">
+                            <th className="text-left px-4 py-1.5">PO #</th>
+                            <th className="text-left px-3 py-1.5">Scope / Description</th>
+                            <th className="text-right px-3 py-1.5">PO Value</th>
+                            <th className="w-6 px-2 py-1.5"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {supplier.pos.map(po => (
+                            <tr key={po.id} className="border-t border-gray-100 hover:bg-white">
+                              <td className="px-4 py-2">
+                                <EditableCell value={po.poNumber} onSave={v => patchPo(po.id, { poNumber: v })}
+                                  inputClass="w-24 font-mono text-sm" textClass="font-mono text-gray-700" />
+                              </td>
+                              <td className="px-3 py-2">
+                                <EditableCell value={po.scope || ""} placeholder="Add description"
+                                  onSave={v => patchPo(po.id, { scope: v })}
+                                  inputClass="w-full text-sm" textClass="text-gray-600" />
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <EditableCell value={po.poValue}
+                                  displayValue={<span className="font-medium tabular-nums">{fmtMoney(Number(po.poValue))}</span>}
+                                  onSave={v => patchPo(po.id, { poValue: v })} type="number"
+                                  inputClass="w-28 text-right text-sm" textClass="font-medium tabular-nums block text-right" />
+                              </td>
+                              <td className="px-2 py-2">
+                                <button onClick={() => deletePo(po.id)} className="text-gray-300 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
+                              </td>
+                            </tr>
+                          ))}
+                          {supplier.pos.length === 0 && (
+                            <tr><td colSpan={4} className="px-4 py-3 text-sm text-gray-400">No POs yet.</td></tr>
+                          )}
+                        </tbody>
+                        {supplier.pos.length > 0 && (
+                          <tfoot className="border-t border-gray-200 bg-gray-50">
+                            <tr>
+                              <td colSpan={2} className="px-4 py-1.5 text-xs font-medium text-gray-500">Total committed</td>
+                              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-sm">{fmtMoney(supplier.poTotal)}</td>
+                              <td></td>
+                            </tr>
+                          </tfoot>
                         )}
-                      </div>
-
-                      {/* Progress Payments */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <p className="text-lg font-semibold text-gray-500 uppercase tracking-wide">Progress Payments</p>
-                          <button onClick={() => setShowPaymentForm(po.id)} className="text-lg text-blue-600 flex items-center gap-0.5 hover:text-blue-700">
-                            <Plus className="w-2.5 h-2.5" /> Add payment
-                          </button>
-                        </div>
-                        {poPays.length > 0 ? (
-                          <table className="w-full text-base bg-white border border-gray-100 rounded-lg overflow-hidden">
-                            <thead>
-                              <tr className="text-lg text-gray-400 bg-gray-50">
-                                <th className="text-left px-2 py-1.5">Date</th>
-                                <th className="text-left px-2 py-1.5">Invoice Ref</th>
-                                <th className="text-left px-2 py-1.5">Notes</th>
-                                <th className="text-right px-2 py-1.5">Amount</th>
-                                <th className="w-5 px-1 py-1.5"></th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {poPays.map(pay => (
-                                <tr key={pay.id} className="border-t border-gray-50">
-                                  <td className="px-2 py-1.5">
-                                    <EditableCell value={pay.paymentDate || ""} type="date" placeholder="Set date"
-                                      onSave={v => patchPayment(pay.id, { paymentDate: v })}
-                                      inputClass="text-lg" textClass="text-gray-600" />
-                                  </td>
-                                  <td className="px-2 py-1.5">
-                                    <EditableCell value={pay.invoiceRef || ""} placeholder="—"
-                                      onSave={v => patchPayment(pay.id, { invoiceRef: v })}
-                                      inputClass="w-20 font-mono text-lg" textClass="font-mono text-lg text-gray-600" />
-                                  </td>
-                                  <td className="px-2 py-1.5">
-                                    <EditableCell value={pay.notes || ""} placeholder="—"
-                                      onSave={v => patchPayment(pay.id, { notes: v })}
-                                      inputClass="w-28 text-lg" textClass="text-lg text-gray-500" />
-                                  </td>
-                                  <td className="px-2 py-1.5 text-right">
-                                    <EditableCell value={pay.amount}
-                                      displayValue={<span className="font-medium tabular-nums">{fmtMoney(Number(pay.amount))}</span>}
-                                      onSave={v => patchPayment(pay.id, { amount: v })} type="number"
-                                      inputClass="w-22 text-right" textClass="font-medium tabular-nums" />
-                                  </td>
-                                  <td className="px-1 py-1.5">
-                                    <button onClick={() => deletePayment(pay.id)} className="text-gray-200 hover:text-red-400"><X className="w-2.5 h-2.5" /></button>
-                                  </td>
-                                </tr>
-                              ))}
-                              <tr className="border-t border-gray-200 bg-gray-50">
-                                <td colSpan={3} className="px-2 py-1.5 text-lg font-medium text-gray-500">Total paid</td>
-                                <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{fmtMoney(paid)}</td>
-                                <td></td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        ) : (
-                          <p className="text-lg text-gray-400 py-1">No payments recorded yet.</p>
-                        )}
+                      </table>
+                      <div className="px-4 py-2 border-t border-gray-100">
+                        <button onClick={() => setShowPoForm(supplier.id)}
+                          className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
+                          <Plus className="w-3.5 h-3.5" /> Add PO
+                        </button>
                       </div>
                     </div>
                   )}
                 </div>
               );
             })}
-            {conPos.length === 0 && (
-              <div className="border border-dashed border-gray-200 rounded-lg py-8 text-center text-gray-400 text-base">
-                No contractor POs yet.
+            {contractors.length === 0 && (
+              <div className="border border-dashed border-gray-200 rounded-lg py-10 text-center text-gray-400 text-sm">
+                No suppliers yet. Add a supplier to start tracking costs.
               </div>
             )}
           </div>
@@ -2199,19 +2076,14 @@ function FinanceTab({ projectId, bg }: {
           <AddWoForm onSave={b => { postFinance({ kind: "work_order", ...b }); setShowWoForm(false); }} />
         </Modal>
       )}
+      {showSupplierForm && (
+        <Modal title="Add Supplier" onClose={() => setShowSupplierForm(false)}>
+          <AddSupplierForm onSave={b => { postFinance({ kind: "contractor", ...b }); setShowSupplierForm(false); }} />
+        </Modal>
+      )}
       {showPoForm && (
-        <Modal title="Add Contractor PO" onClose={() => setShowPoForm(false)}>
-          <AddPoForm contractors={contractors} onSave={b => { postFinance({ kind: "contractor_po", ...b }); setShowPoForm(false); }} />
-        </Modal>
-      )}
-      {showLineItemForm && (
-        <Modal title="Add Line Item" onClose={() => setShowLineItemForm(null)}>
-          <AddLineItemForm onSave={b => { postFinance({ kind: "po_line_item", poId: showLineItemForm, ...b }); setShowLineItemForm(null); }} />
-        </Modal>
-      )}
-      {showPaymentForm && (
-        <Modal title="Add Payment" onClose={() => setShowPaymentForm(null)}>
-          <AddPaymentForm onSave={b => { postFinance({ kind: "po_payment", poId: showPaymentForm, ...b }); setShowPaymentForm(null); }} />
+        <Modal title="Add PO" onClose={() => setShowPoForm(null)}>
+          <AddPoForm contractorId={showPoForm} onSave={b => { postFinance({ kind: "contractor_po", contractorId: showPoForm, ...b }); setShowPoForm(null); }} />
         </Modal>
       )}
     </div>
@@ -2240,26 +2112,31 @@ function AddWoForm({ onSave }: { onSave: (b: Record<string, unknown>) => void })
   );
 }
 
-function AddPoForm({ contractors, onSave }: { contractors: Contractor[]; onSave: (b: Record<string, unknown>) => void }) {
-  const [contractorId, setContractorId] = useState("");
-  const [newName, setNewName] = useState("");
+function AddSupplierForm({ onSave }: { onSave: (b: Record<string, unknown>) => void }) {
+  const [name, setName] = useState("");
+  const [allocatedBudget, setAllocatedBudget] = useState("");
+  return (
+    <>
+      <input value={name} onChange={e => setName(e.target.value)} placeholder="Supplier / contractor name" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <input type="number" value={allocatedBudget} onChange={e => setAllocatedBudget(e.target.value)} placeholder="Allocated budget ($)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-3" />
+      <button onClick={() => { if (name && allocatedBudget) onSave({ name, allocatedBudget }); }}
+        className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg w-full">Add Supplier</button>
+    </>
+  );
+}
+
+function AddPoForm({ contractorId, onSave }: { contractorId: string; onSave: (b: Record<string, unknown>) => void }) {
   const [poNumber, setPoNumber] = useState("");
   const [scope, setScope] = useState("");
   const [poValue, setPoValue] = useState("");
   const [issueDate, setIssueDate] = useState("");
   return (
     <>
-      <p className="text-xs text-gray-500 mb-1">Select existing contractor or enter a new name</p>
-      <select value={contractorId} onChange={e => setContractorId(e.target.value)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2">
-        <option value="">— New contractor —</option>
-        {contractors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-      </select>
-      {!contractorId && <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="New contractor name" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />}
       <input value={poNumber} onChange={e => setPoNumber(e.target.value)} placeholder="PO number (e.g. PO-001)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
-      <input value={scope} onChange={e => setScope(e.target.value)} placeholder="Scope description" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
+      <input value={scope} onChange={e => setScope(e.target.value)} placeholder="Scope / description" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
       <input type="number" value={poValue} onChange={e => setPoValue(e.target.value)} placeholder="PO value ($)" className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2" />
       <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-3" />
-      <button onClick={() => { if (poNumber && poValue && (contractorId || newName)) onSave({ contractorId: contractorId || null, contractorName: contractorId ? null : newName, poNumber, scope: scope || null, poValue, issueDate: issueDate || null }); }}
+      <button onClick={() => { if (poNumber && poValue) onSave({ contractorId, poNumber, scope: scope || null, poValue, issueDate: issueDate || null }); }}
         className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg w-full">Add PO</button>
     </>
   );

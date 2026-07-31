@@ -159,6 +159,7 @@ export const contractors = pgTable("contractors", {
   projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   scope: text("scope"),
+  allocatedBudget: numeric("allocated_budget", { precision: 12, scale: 2 }).default("0").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

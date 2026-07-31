@@ -12,6 +12,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const patch: Record<string, unknown> = {};
   if (body.name !== undefined) patch.name = body.name;
   if (body.scope !== undefined) patch.scope = body.scope || null;
+  if (body.allocatedBudget !== undefined) patch.allocatedBudget = String(body.allocatedBudget);
   await db.update(contractors).set(patch).where(eq(contractors.id, id));
   return NextResponse.json({ ok: true });
 }
