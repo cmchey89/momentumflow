@@ -2020,78 +2020,80 @@ function FinanceTab({ projectId, bg }: {
                     </div>
                   </div>
 
-                  {/* PO rows */}
+                  {/* Expanded: PO + Claims, visually separated */}
                   {isOpen && (
-                    <div className="border-t border-gray-100 bg-gray-50/20">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-xs text-gray-400 uppercase tracking-wide bg-gray-50">
-                            <th className="text-left px-4 py-1.5">PO #</th>
-                            <th className="text-left px-3 py-1.5">Scope / Description</th>
-                            <th className="text-right px-3 py-1.5">PO Value</th>
-                            <th className="w-6 px-2 py-1.5"></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {supplier.pos.map(po => (
-                            <tr key={po.id} className="border-t border-gray-100 hover:bg-white">
-                              <td className="px-4 py-2">
-                                <EditableCell value={po.poNumber} onSave={v => patchPo(po.id, { poNumber: v })}
-                                  inputClass="w-24 font-mono text-sm" textClass="font-mono text-gray-700" />
-                              </td>
-                              <td className="px-3 py-2">
-                                <EditableCell value={po.scope || ""} placeholder="Add description"
-                                  onSave={v => patchPo(po.id, { scope: v })}
-                                  inputClass="w-full text-sm" textClass="text-gray-600" />
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                <EditableCell value={po.poValue}
-                                  displayValue={<span className="font-medium tabular-nums">{fmtMoney(Number(po.poValue))}</span>}
-                                  onSave={v => patchPo(po.id, { poValue: v })} type="number"
-                                  inputClass="w-28 text-right text-sm" textClass="font-medium tabular-nums block text-right" />
-                              </td>
-                              <td className="px-2 py-2">
-                                <button onClick={() => deletePo(po.id)} className="text-gray-300 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
-                              </td>
+                    <div className="border-t border-gray-100 bg-gray-50/40 p-3 space-y-3">
+
+                      {/* Purchase Orders block — blue accent */}
+                      <div className="rounded-lg border border-blue-100 bg-white overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-2 bg-blue-50/60 border-l-4 border-blue-400">
+                          <span className="text-xs font-bold text-blue-700 uppercase tracking-wide">Purchase Orders</span>
+                          <button onClick={() => setShowPoForm(supplier.id)}
+                            className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium">
+                            <Plus className="w-3.5 h-3.5" /> Add PO
+                          </button>
+                        </div>
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-xs text-gray-400 uppercase tracking-wide bg-gray-50">
+                              <th className="text-left px-4 py-1.5">PO #</th>
+                              <th className="text-left px-3 py-1.5">Scope / Description</th>
+                              <th className="text-right px-3 py-1.5">PO Value</th>
+                              <th className="w-6 px-2 py-1.5"></th>
                             </tr>
-                          ))}
-                          {supplier.pos.length === 0 && (
-                            <tr><td colSpan={4} className="px-4 py-3 text-sm text-gray-400">No POs yet.</td></tr>
+                          </thead>
+                          <tbody>
+                            {supplier.pos.map(po => (
+                              <tr key={po.id} className="border-t border-gray-100 hover:bg-blue-50/20">
+                                <td className="px-4 py-2">
+                                  <EditableCell value={po.poNumber} onSave={v => patchPo(po.id, { poNumber: v })}
+                                    inputClass="w-24 font-mono text-sm" textClass="font-mono text-gray-700" />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <EditableCell value={po.scope || ""} placeholder="Add description"
+                                    onSave={v => patchPo(po.id, { scope: v })}
+                                    inputClass="w-full text-sm" textClass="text-gray-600" />
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  <EditableCell value={po.poValue}
+                                    displayValue={<span className="font-medium tabular-nums">{fmtMoney(Number(po.poValue))}</span>}
+                                    onSave={v => patchPo(po.id, { poValue: v })} type="number"
+                                    inputClass="w-28 text-right text-sm" textClass="font-medium tabular-nums block text-right" />
+                                </td>
+                                <td className="px-2 py-2">
+                                  <button onClick={() => deletePo(po.id)} className="text-gray-300 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
+                                </td>
+                              </tr>
+                            ))}
+                            {supplier.pos.length === 0 && (
+                              <tr><td colSpan={4} className="px-4 py-3 text-sm text-gray-400">No POs yet.</td></tr>
+                            )}
+                          </tbody>
+                          {supplier.pos.length > 0 && (
+                            <tfoot className="border-t border-blue-100 bg-blue-50/40">
+                              <tr>
+                                <td colSpan={2} className="px-4 py-1.5 text-xs font-medium text-blue-700">Total committed</td>
+                                <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-sm text-blue-700">{fmtMoney(supplier.poTotal)}</td>
+                                <td></td>
+                              </tr>
+                            </tfoot>
                           )}
-                        </tbody>
-                        {supplier.pos.length > 0 && (
-                          <tfoot className="border-t border-gray-200 bg-gray-50">
-                            <tr>
-                              <td colSpan={2} className="px-4 py-1.5 text-xs font-medium text-gray-500">Total committed</td>
-                              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-sm">{fmtMoney(supplier.poTotal)}</td>
-                              <td></td>
-                            </tr>
-                          </tfoot>
-                        )}
-                      </table>
-                      <div className="px-4 py-2 border-t border-gray-100">
-                        <button onClick={() => setShowPoForm(supplier.id)}
-                          className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
-                          <Plus className="w-3.5 h-3.5" /> Add PO
-                        </button>
+                        </table>
                       </div>
 
-                      {/* Claims / Payments section */}
-                      <div className="border-t-2 border-gray-200">
-                        <div className="flex items-center justify-between px-4 py-2 bg-gray-50">
-                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Payment Claims</span>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-500 tabular-nums">Paid: <span className="font-semibold text-orange-600">{fmtMoney(supplier.totalPaidToSupplier)}</span></span>
-                            <button onClick={() => setShowClaimForm({ contractorId: supplier.id, pos: supplier.pos })}
-                              className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
-                              <Plus className="w-3.5 h-3.5" /> Add Claim
-                            </button>
-                          </div>
+                      {/* Payment Claims block — orange accent */}
+                      <div className="rounded-lg border border-orange-100 bg-white overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-2 bg-orange-50/60 border-l-4 border-orange-400">
+                          <span className="text-xs font-bold text-orange-700 uppercase tracking-wide">Payment Claims</span>
+                          <button onClick={() => setShowClaimForm({ contractorId: supplier.id, pos: supplier.pos })}
+                            className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium">
+                            <Plus className="w-3.5 h-3.5" /> Add Claim
+                          </button>
                         </div>
                         {supplier.payments.length > 0 ? (
                           <table className="w-full text-sm">
                             <thead>
-                              <tr className="text-xs text-gray-400 uppercase tracking-wide bg-gray-50/50">
+                              <tr className="text-xs text-gray-400 uppercase tracking-wide bg-gray-50">
                                 <th className="text-left px-4 py-1.5">Date</th>
                                 <th className="text-left px-3 py-1.5">Invoice Ref</th>
                                 <th className="text-left px-3 py-1.5">Against PO</th>
@@ -2103,7 +2105,7 @@ function FinanceTab({ projectId, bg }: {
                               {supplier.payments.map(pay => {
                                 const linkedPo = supplier.pos.find(p => p.id === pay.poId);
                                 return (
-                                  <tr key={pay.id} className="border-t border-gray-100 hover:bg-white">
+                                  <tr key={pay.id} className="border-t border-gray-100 hover:bg-orange-50/20">
                                     <td className="px-4 py-2 text-gray-600">{pay.paymentDate || <span className="text-gray-300">—</span>}</td>
                                     <td className="px-3 py-2 font-mono text-gray-600">{pay.invoiceRef || <span className="text-gray-300">—</span>}</td>
                                     <td className="px-3 py-2 text-gray-400 text-xs">{linkedPo?.poNumber ?? "—"}</td>
@@ -2119,6 +2121,10 @@ function FinanceTab({ projectId, bg }: {
                         ) : (
                           <p className="px-4 py-3 text-sm text-gray-400">No payment claims recorded.</p>
                         )}
+                        <div className="border-t border-orange-100 bg-orange-50/40 px-4 py-1.5">
+                          <span className="text-xs font-medium text-orange-700">Total paid: </span>
+                          <span className="text-sm font-semibold tabular-nums text-orange-700">{fmtMoney(supplier.totalPaidToSupplier)}</span>
+                        </div>
                       </div>
                     </div>
                   )}
