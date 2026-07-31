@@ -56,7 +56,7 @@ interface PlanTask {
 interface Comment { id: string; taskId: string; authorName: string; text: string | null; imageUrl: string | null; createdAt: string }
 
 type ClaimStatus = "pending" | "submitted" | "approved" | "paid";
-interface Contractor { id: string; name: string; scope: string | null; allocatedBudget: string }
+interface Contractor { id: string; name: string; scope: string | null; allocatedBudget: string; sortOrder: number }
 interface ContractorClaim { id: string; contractorId: string; stageId: string | null; amount: number; invoiceNo: string | null; status: ClaimStatus }
 interface ClientClaim { id: string; stageId: string | null; amount: number; invoiceNo: string | null; status: ClaimStatus }
 
@@ -1764,6 +1764,9 @@ function FinanceTab({ projectId, bg }: {
   const [woOrder, setWoOrder] = useState<WorkOrder[]>([]);
   const [draggedWoId, setDraggedWoId] = useState<string | null>(null);
   const [dragOverWoId, setDragOverWoId] = useState<string | null>(null);
+  const [supplierOrder, setSupplierOrder] = useState<Contractor[]>([]);
+  const [draggedSupplierId, setDraggedSupplierId] = useState<string | null>(null);
+  const [dragOverSupplierId, setDragOverSupplierId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     fetch(`/api/projects/${projectId}/finance`).then(r => r.json()).then(setData);
@@ -1771,10 +1774,11 @@ function FinanceTab({ projectId, bg }: {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setWoOrder(data?.workOrders ?? []); }, [data]);
+  useEffect(() => { setSupplierOrder(data?.contractors ?? []); }, [data]);
 
   const wos = woOrder;
   const conPos = data?.contractorPos ?? [];
-  const contractors = data?.contractors ?? [];
+  const contractors = supplierOrder;
   const payments = data?.payments ?? [];
 
   const totalWoValue = wos.filter(w => w.status === "active").reduce((s, w) => s + Number(w.contractValue), 0);
@@ -1854,6 +1858,25 @@ function FinanceTab({ projectId, bg }: {
     setDraggedWoId(null);
     setDragOverWoId(null);
     reorderWos(current.map(w => w.id));
+  };
+  const reorderSuppliers = async (orderedIds: string[]) => {
+    await fetch(`/api/projects/${projectId}/finance`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "contractors_reorder", orderedIds }),
+    });
+  };
+  const handleSupplierDrop = (targetId: string) => {
+    if (!draggedSupplierId || draggedSupplierId === targetId) { setDraggedSupplierId(null); setDragOverSupplierId(null); return; }
+    const current = [...supplierOrder];
+    const fromIdx = current.findIndex(s => s.id === draggedSupplierId);
+    const toIdx = current.findIndex(s => s.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = current.splice(fromIdx, 1);
+    current.splice(toIdx, 0, moved);
+    setSupplierOrder(current);
+    setDraggedSupplierId(null);
+    setDragOverSupplierId(null);
+    reorderSuppliers(current.map(s => s.id));
   };
   const patchPo = async (id: string, patch: Record<string, unknown>) => {
     await fetch(`/api/finance/pos/${id}`, {
@@ -2031,10 +2054,20 @@ function FinanceTab({ projectId, bg }: {
             {supplierGroups.map(supplier => {
               const isOpen = expandedSuppliers.has(supplier.id);
               return (
-                <div key={supplier.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                <div key={supplier.id}
+                  draggable
+                  onDragStart={() => setDraggedSupplierId(supplier.id)}
+                  onDragOver={e => { e.preventDefault(); if (dragOverSupplierId !== supplier.id) setDragOverSupplierId(supplier.id); }}
+                  onDragLeave={() => setDragOverSupplierId(prev => (prev === supplier.id ? null : prev))}
+                  onDrop={e => { e.preventDefault(); handleSupplierDrop(supplier.id); }}
+                  onDragEnd={() => { setDraggedSupplierId(null); setDragOverSupplierId(null); }}
+                  className={`border rounded-lg overflow-hidden ${dragOverSupplierId === supplier.id && draggedSupplierId !== supplier.id ? "border-t-2 border-t-blue-400 border-gray-200" : "border-gray-200"} ${draggedSupplierId === supplier.id ? "opacity-40" : ""}`}>
                   {/* Supplier header */}
                   <div className="flex items-center gap-2 px-3 py-3 bg-white hover:bg-gray-50/50 cursor-pointer select-none"
                     onClick={() => toggleSupplier(supplier.id)}>
+                    <span className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                      <GripVertical className="w-4 h-4" />
+                    </span>
                     <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform duration-150 flex-shrink-0 ${isOpen ? "rotate-90" : ""}`} />
                     <div className="flex-1 min-w-0" onClick={e => e.stopPropagation()}>
                       <EditableCell value={supplier.name}

@@ -160,6 +160,7 @@ export const contractors = pgTable("contractors", {
   name: text("name").notNull(),
   scope: text("scope"),
   allocatedBudget: numeric("allocated_budget", { precision: 12, scale: 2 }).default("0").notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

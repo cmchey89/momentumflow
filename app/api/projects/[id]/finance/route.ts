@@ -13,7 +13,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
 
   const [cons, wos, conPos, cClaims, clClaims] = await Promise.all([
-    db.select().from(contractors).where(eq(contractors.projectId, id)),
+    db.select().from(contractors).where(eq(contractors.projectId, id)).orderBy(asc(contractors.sortOrder)),
     db.select().from(workOrders).where(eq(workOrders.projectId, id)).orderBy(asc(workOrders.sortOrder)),
     db.select().from(contractorPos).where(eq(contractorPos.projectId, id)),
     db.select().from(contractorClaims).where(eq(contractorClaims.projectId, id)),
@@ -94,13 +94,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   if (body.kind === "contractor") {
+    const existing = await db.select({ sortOrder: contractors.sortOrder }).from(contractors).where(eq(contractors.projectId, id));
+    const nextSortOrder = existing.reduce((max, c) => Math.max(max, c.sortOrder), -1) + 1;
     const [con] = await db.insert(contractors).values({
       projectId: id,
       name: body.name,
       scope: body.scope || null,
       allocatedBudget: String(body.allocatedBudget ?? 0),
+      sortOrder: nextSortOrder,
     }).returning();
     return NextResponse.json(con);
+  }
+
+  if (body.kind === "contractors_reorder") {
+    const orderedIds: string[] = body.orderedIds ?? [];
+    await Promise.all(orderedIds.map((cId, index) =>
+      db.update(contractors).set({ sortOrder: index }).where(eq(contractors.id, cId))
+    ));
+    return NextResponse.json({ ok: true });
   }
 
   if (body.kind === "contractor_po") {
