@@ -95,6 +95,7 @@ export const projectBackground = pgTable("project_background", {
   targetStart: date("target_start"),
   targetEnd: date("target_end"),
   markupPct: numeric("markup_pct", { precision: 5, scale: 2 }).default("0"),
+  claimedToDate: numeric("claimed_to_date", { precision: 12, scale: 2 }).default("0"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
@@ -208,6 +209,7 @@ export const contractorPos = pgTable("contractor_pos", {
   scope: text("scope"),
   poValue: numeric("po_value", { precision: 12, scale: 2 }).notNull().default("0"),
   issueDate: date("issue_date"),
+  isCompleted: boolean("is_completed").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -14,6 +14,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.scope !== undefined) patch.scope = body.scope || null;
   if (body.poNumber !== undefined) patch.poNumber = body.poNumber;
   if (body.issueDate !== undefined) patch.issueDate = body.issueDate || null;
+  if (body.isCompleted !== undefined) patch.isCompleted = Boolean(body.isCompleted);
   await db.update(contractorPos).set(patch).where(eq(contractorPos.id, id));
   return NextResponse.json({ ok: true });
 }

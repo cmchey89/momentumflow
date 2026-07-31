@@ -19,6 +19,7 @@ interface Background {
   targetStart: string | null;
   targetEnd: string | null;
   markupPct: string | null;
+  claimedToDate: string | null;
 }
 
 type WoType = "original" | "variation";
@@ -29,7 +30,7 @@ interface WorkOrder {
 }
 interface ContractorPo {
   id: string; contractorId: string; poNumber: string; scope: string | null;
-  poValue: string; issueDate: string | null; contractorName: string;
+  poValue: string; issueDate: string | null; contractorName: string; isCompleted: boolean;
 }
 interface PoLineItem {
   id: string; poId: string; description: string; unit: string;
@@ -250,7 +251,7 @@ export default function ProjectDetailPage() {
   const [bg, setBg] = useState<Background | null>(null);
   const [files, setFiles] = useState<ProjFile[]>([]);
   const [editingBg, setEditingBg] = useState(false);
-  const [bgForm, setBgForm] = useState<Background>({ why: "", client: "", poNumber: "", poValue: null, targetStart: "", targetEnd: "", markupPct: "0" });
+  const [bgForm, setBgForm] = useState<Background>({ why: "", client: "", poNumber: "", poValue: null, targetStart: "", targetEnd: "", markupPct: "0", claimedToDate: "0" });
 
   // stages/tasks
   const [stages, setStages] = useState<Stage[]>([]);
@@ -1758,8 +1759,8 @@ function FinanceTab({ projectId, bg }: {
   const [showPoForm, setShowPoForm] = useState(false);
   const [showLineItemForm, setShowLineItemForm] = useState<string | null>(null);
   const [showPaymentForm, setShowPaymentForm] = useState<string | null>(null);
-  const [editingMarkup, setEditingMarkup] = useState(false);
-  const [markupInput, setMarkupInput] = useState(bg?.markupPct ?? "0");
+  const [editingClaimed, setEditingClaimed] = useState(false);
+  const [claimedInput, setClaimedInput] = useState(bg?.claimedToDate ?? "0");
 
   const load = useCallback(() => {
     fetch(`/api/projects/${projectId}/finance`).then(r => r.json()).then(setData);
@@ -1776,9 +1777,7 @@ function FinanceTab({ projectId, bg }: {
   const totalWoValue = wos.filter(w => w.status === "active").reduce((s, w) => s + Number(w.contractValue), 0);
   const totalPoValue = conPos.reduce((s, p) => s + Number(p.poValue), 0);
   const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
-  const markup = Number(bg?.markupPct ?? markupInput ?? 0);
-  const expectedRevenue = totalPoValue * (1 + markup / 100);
-  const margin = totalWoValue - totalPoValue;
+  const claimedToDate = Number(bg?.claimedToDate ?? claimedInput ?? 0);
 
   const poPaymentsMap: Record<string, PoPayment[]> = {};
   const poLineItemsMap: Record<string, PoLineItem[]> = {};
@@ -1789,20 +1788,24 @@ function FinanceTab({ projectId, bg }: {
     poPaidMap[po.id] = poPaymentsMap[po.id].reduce((s, p) => s + Number(p.amount), 0);
   }
 
+  const savings = conPos
+    .filter(po => po.isCompleted)
+    .reduce((s, po) => s + Math.max(0, Number(po.poValue) - (poPaidMap[po.id] ?? 0)), 0);
+
   const togglePo = (id: string) =>
     setExpandedPos(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const saveMarkup = async () => {
+  const saveClaimed = async () => {
     if (!bg) return;
     await fetch(`/api/projects/${projectId}/background`, {
       method: "PUT", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         why: bg.why, client: bg.client, poNumber: bg.poNumber,
         poValue: bg.poValue, targetStart: bg.targetStart, targetEnd: bg.targetEnd,
-        markupPct: markupInput,
+        markupPct: bg.markupPct, claimedToDate: claimedInput,
       }),
     });
-    setEditingMarkup(false);
+    setEditingClaimed(false);
   };
 
   const postFinance = async (body: Record<string, unknown>) => {
@@ -1856,48 +1859,54 @@ function FinanceTab({ projectId, bg }: {
   return (
     <div className="flex flex-col gap-3" style={{ height: "calc(100vh - 210px)" }}>
       {/* Compact summary bar */}
-      <div className="flex-shrink-0 flex flex-wrap items-center gap-x-6 gap-y-1.5 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400 uppercase tracking-wide">Contract</span>
+      <div className="flex-shrink-0 flex flex-wrap items-stretch gap-px bg-gray-200 border border-gray-200 rounded-xl overflow-hidden text-sm">
+        {/* Contract Value */}
+        <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
+          <span className="text-[10px] text-gray-400 uppercase tracking-wide">Contract Value</span>
           <span className="font-semibold tabular-nums text-gray-900">{fmtMoney(totalWoValue)}</span>
-          <span className="text-xs text-gray-400">{wos.filter(w => w.status === "active").length} WO</span>
+          <span className="text-[10px] text-gray-400">{wos.filter(w => w.status === "active").length} active WO</span>
         </div>
-        <div className="w-px h-4 bg-gray-200" />
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400 uppercase tracking-wide">PO Cost</span>
-          <span className="font-semibold tabular-nums text-amber-600">{fmtMoney(totalPoValue)}</span>
-        </div>
-        <div className="w-px h-4 bg-gray-200" />
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400 uppercase tracking-wide">Paid</span>
-          <span className="font-semibold tabular-nums text-gray-700">{fmtMoney(totalPaid)}</span>
-        </div>
-        <div className="w-px h-4 bg-gray-200" />
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400 uppercase tracking-wide">Cost-Plus</span>
-          <span className="font-semibold tabular-nums text-blue-600">{fmtMoney(Math.round(expectedRevenue))}</span>
-          {editingMarkup ? (
+        {/* Claimed to Date */}
+        <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
+          <span className="text-[10px] text-gray-400 uppercase tracking-wide">Claimed to Date</span>
+          {editingClaimed ? (
             <span className="flex items-center gap-1">
-              <input type="number" value={markupInput} onChange={e => setMarkupInput(e.target.value)}
-                className="w-12 text-xs border border-gray-300 rounded px-1.5 py-0.5" />
-              <span className="text-xs text-gray-400">%</span>
-              <button onClick={saveMarkup} className="text-xs text-blue-600 font-medium">Save</button>
-              <button onClick={() => setEditingMarkup(false)} className="text-xs text-gray-400">×</button>
+              <input type="number" value={claimedInput} onChange={e => setClaimedInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") saveClaimed(); if (e.key === "Escape") setEditingClaimed(false); }}
+                className="w-28 text-sm border border-blue-300 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-blue-400" autoFocus />
+              <button onClick={saveClaimed} className="text-xs text-blue-600 font-medium">Save</button>
+              <button onClick={() => setEditingClaimed(false)} className="text-xs text-gray-400">×</button>
             </span>
           ) : (
-            <button onClick={() => setEditingMarkup(true)} className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded px-1.5 py-0.5">
-              {markup}% ✎
+            <button onClick={() => setEditingClaimed(true)} className="text-left flex items-center gap-1.5 group">
+              <span className="font-semibold tabular-nums text-blue-600">{fmtMoney(claimedToDate)}</span>
+              <span className="text-[10px] text-gray-300 group-hover:text-gray-400">✎</span>
             </button>
           )}
-        </div>
-        <div className="w-px h-4 bg-gray-200" />
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400 uppercase tracking-wide">Margin</span>
-          <span className={`font-semibold tabular-nums ${margin >= 0 ? "text-green-600" : "text-red-600"}`}>{fmtMoney(margin)}</span>
           {totalWoValue > 0 && (
-            <span className={`text-xs ${margin >= 0 ? "text-green-500" : "text-red-400"}`}>
-              {((margin / totalWoValue) * 100).toFixed(1)}%
+            <span className="text-[10px] text-gray-400">
+              {((claimedToDate / totalWoValue) * 100).toFixed(1)}% of contract
             </span>
+          )}
+        </div>
+        {/* PO Budget */}
+        <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
+          <span className="text-[10px] text-gray-400 uppercase tracking-wide">PO Budget</span>
+          <span className="font-semibold tabular-nums text-gray-900">{fmtMoney(totalPoValue)}</span>
+          <span className="text-[10px] text-gray-400">{conPos.length} PO{conPos.length !== 1 ? "s" : ""}</span>
+        </div>
+        {/* Paid Out */}
+        <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
+          <span className="text-[10px] text-gray-400 uppercase tracking-wide">Paid Out</span>
+          <span className="font-semibold tabular-nums text-amber-600">{fmtMoney(totalPaid)}</span>
+          <span className="text-[10px] text-gray-400">{totalPoValue > 0 ? `${((totalPaid / totalPoValue) * 100).toFixed(1)}% of budget` : "—"}</span>
+        </div>
+        {/* Balance */}
+        <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
+          <span className="text-[10px] text-gray-400 uppercase tracking-wide">Balance</span>
+          <span className="font-semibold tabular-nums text-gray-700">{fmtMoney(totalPoValue - totalPaid)}</span>
+          {savings > 0 && (
+            <span className="text-[10px] text-orange-500">incl. {fmtMoney(savings)} savings</span>
           )}
         </div>
       </div>
@@ -2029,6 +2038,12 @@ function FinanceTab({ projectId, bg }: {
                         <p className="text-gray-400 text-[10px]">Balance</p>
                         <p className={`font-medium tabular-nums ${balance > 0 ? "text-gray-700" : "text-green-600"}`}>{fmtMoney(balance)}</p>
                       </div>
+                      <button
+                        onClick={() => patchPo(po.id, { isCompleted: !po.isCompleted })}
+                        title={po.isCompleted ? "Mark as active" : "Mark as completed"}
+                        className={`text-xs rounded-full px-2 py-0.5 border transition-colors ${po.isCompleted ? "bg-green-50 text-green-600 border-green-200 hover:bg-green-100" : "text-gray-300 border-gray-200 hover:text-gray-500"}`}>
+                        {po.isCompleted ? "Done" : "Active"}
+                      </button>
                       <button onClick={() => deletePo(po.id)} className="text-gray-300 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
                     </div>
                   </div>

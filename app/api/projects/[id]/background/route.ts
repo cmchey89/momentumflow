@@ -19,7 +19,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const session = getSessionFromRequest(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
-  const { why, client, poNumber, poValue, targetStart, targetEnd, markupPct } = await req.json();
+  const { why, client, poNumber, poValue, targetStart, targetEnd, markupPct, claimedToDate } = await req.json();
 
   const [existing] = await db.select().from(projectBackground).where(eq(projectBackground.projectId, id));
   const values = {
@@ -30,6 +30,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     targetStart: targetStart || null,
     targetEnd: targetEnd || null,
     markupPct: markupPct != null ? String(markupPct) : "0",
+    claimedToDate: claimedToDate != null ? String(claimedToDate) : "0",
     updatedAt: new Date(),
   };
 
