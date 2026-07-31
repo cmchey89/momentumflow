@@ -754,35 +754,35 @@ function BackgroundTab(props: {
               <Row label="Target" value={bg?.targetStart ? `${fmtDate(bg.targetStart)} – ${fmtDate(bg.targetEnd)}` : null} />
             </div>
           )}
-        </div>
-      </div>
 
-      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6">
-        <p className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Finance summary <span className="font-normal normal-case text-gray-400">— live from Finance tab</span></p>
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-          <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Contract Value</p>
-            <p className="text-base font-semibold tabular-nums text-gray-900">{fmtMoney(financeSummary.totalWoValue)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Claimed to Date</p>
-            <p className="text-base font-semibold tabular-nums text-blue-600">{fmtMoney(financeSummary.claimedToDate)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Allocated Budget</p>
-            <p className="text-base font-semibold tabular-nums text-gray-900">{fmtMoney(financeSummary.totalAllocatedBudget)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Total PO</p>
-            <p className={`text-base font-semibold tabular-nums ${financeSummary.totalPoValue > financeSummary.totalAllocatedBudget && financeSummary.totalAllocatedBudget > 0 ? "text-red-600" : "text-amber-600"}`}>{fmtMoney(financeSummary.totalPoValue)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Paid to Suppliers</p>
-            <p className="text-base font-semibold tabular-nums text-orange-600">{fmtMoney(financeSummary.totalPaid)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-400 uppercase tracking-wide">Gross Profit</p>
-            <p className={`text-base font-semibold tabular-nums ${financeSummary.grossProfit >= 0 ? "text-green-700" : "text-red-600"}`}>{fmtMoney(financeSummary.grossProfit)}</p>
+          <div className="border-t border-gray-200 mt-3 pt-3">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Finance summary <span className="font-normal normal-case text-gray-400">— live</span></p>
+            <div className="grid grid-cols-2 gap-y-2 gap-x-3">
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wide">Contract Value</p>
+                <p className="text-sm font-semibold tabular-nums text-gray-900">{fmtMoney(financeSummary.totalWoValue)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wide">Claimed to Date</p>
+                <p className="text-sm font-semibold tabular-nums text-blue-600">{fmtMoney(financeSummary.claimedToDate)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wide">Allocated Budget</p>
+                <p className="text-sm font-semibold tabular-nums text-gray-900">{fmtMoney(financeSummary.totalAllocatedBudget)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wide">Total PO</p>
+                <p className={`text-sm font-semibold tabular-nums ${financeSummary.totalPoValue > financeSummary.totalAllocatedBudget && financeSummary.totalAllocatedBudget > 0 ? "text-red-600" : "text-amber-600"}`}>{fmtMoney(financeSummary.totalPoValue)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wide">Paid to Suppliers</p>
+                <p className="text-sm font-semibold tabular-nums text-orange-600">{fmtMoney(financeSummary.totalPaid)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 uppercase tracking-wide">Gross Profit</p>
+                <p className={`text-sm font-semibold tabular-nums ${financeSummary.grossProfit >= 0 ? "text-green-700" : "text-red-600"}`}>{fmtMoney(financeSummary.grossProfit)}</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
