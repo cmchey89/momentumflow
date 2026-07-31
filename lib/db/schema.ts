@@ -197,6 +197,7 @@ export const workOrders = pgTable("work_orders", {
   status: woStatusEnum("status").default("active").notNull(),
   contractValue: numeric("contract_value", { precision: 12, scale: 2 }).notNull().default("0"),
   issueDate: date("issue_date"),
+  sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

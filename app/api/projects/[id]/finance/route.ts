@@ -5,7 +5,7 @@ import {
   contractors, contractorClaims, clientClaims,
   workOrders, contractorPos, poLineItems, poPayments,
 } from "../../../../../lib/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, asc } from "drizzle-orm";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSessionFromRequest(req);
@@ -14,7 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const [cons, wos, conPos, cClaims, clClaims] = await Promise.all([
     db.select().from(contractors).where(eq(contractors.projectId, id)),
-    db.select().from(workOrders).where(eq(workOrders.projectId, id)),
+    db.select().from(workOrders).where(eq(workOrders.projectId, id)).orderBy(asc(workOrders.sortOrder)),
     db.select().from(contractorPos).where(eq(contractorPos.projectId, id)),
     db.select().from(contractorClaims).where(eq(contractorClaims.projectId, id)),
     db.select().from(clientClaims).where(eq(clientClaims.projectId, id)),
@@ -51,10 +51,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json().catch(() => ({}));
 
   // ── Legacy kinds ──────────────────────────────────────────────────────
-  if (body.kind === "contractor") {
-    const [c] = await db.insert(contractors).values({ projectId: id, name: body.name, scope: body.scope || null }).returning();
-    return NextResponse.json(c);
-  }
   if (body.kind === "contractor_claim") {
     const [c] = await db.insert(contractorClaims).values({
       projectId: id, contractorId: body.contractorId, stageId: body.stageId || null,
@@ -74,6 +70,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // ── New kinds ─────────────────────────────────────────────────────────
   if (body.kind === "work_order") {
+    const existing = await db.select({ sortOrder: workOrders.sortOrder }).from(workOrders).where(eq(workOrders.projectId, id));
+    const nextSortOrder = existing.reduce((max, w) => Math.max(max, w.sortOrder), -1) + 1;
     const [wo] = await db.insert(workOrders).values({
       projectId: id,
       woNumber: body.woNumber,
@@ -82,8 +80,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       status: body.status || "active",
       contractValue: String(body.contractValue ?? 0),
       issueDate: body.issueDate || null,
+      sortOrder: nextSortOrder,
     }).returning();
     return NextResponse.json(wo);
+  }
+
+  if (body.kind === "work_orders_reorder") {
+    const orderedIds: string[] = body.orderedIds ?? [];
+    await Promise.all(orderedIds.map((woId, index) =>
+      db.update(workOrders).set({ sortOrder: index }).where(eq(workOrders.id, woId))
+    ));
+    return NextResponse.json({ ok: true });
   }
 
   if (body.kind === "contractor") {

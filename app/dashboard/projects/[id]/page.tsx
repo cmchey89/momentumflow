@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft, Plus, ChevronRight, ChevronLeft, MessageSquare, Flag, Trash2,
-  Upload, Download, FileText, X, Pencil, Layers, Square, CornerDownRight,
+  Upload, Download, FileText, X, Pencil, Layers, Square, CornerDownRight, GripVertical,
 } from "lucide-react";
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ type WoType = "original" | "variation";
 type WoStatus = "active" | "superseded";
 interface WorkOrder {
   id: string; woNumber: string; description: string | null;
-  type: WoType; status: WoStatus; contractValue: string; issueDate: string | null;
+  type: WoType; status: WoStatus; contractValue: string; issueDate: string | null; sortOrder: number;
 }
 interface ContractorPo {
   id: string; contractorId: string; poNumber: string; scope: string | null;
@@ -1761,14 +1761,18 @@ function FinanceTab({ projectId, bg }: {
   const [showClaimForm, setShowClaimForm] = useState<{ contractorId: string; pos: ContractorPo[] } | null>(null);
   const [editingClaimed, setEditingClaimed] = useState(false);
   const [claimedInput, setClaimedInput] = useState(bg?.claimedToDate ?? "0");
+  const [woOrder, setWoOrder] = useState<WorkOrder[]>([]);
+  const [draggedWoId, setDraggedWoId] = useState<string | null>(null);
+  const [dragOverWoId, setDragOverWoId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     fetch(`/api/projects/${projectId}/finance`).then(r => r.json()).then(setData);
   }, [projectId]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setWoOrder(data?.workOrders ?? []); }, [data]);
 
-  const wos = data?.workOrders ?? [];
+  const wos = woOrder;
   const conPos = data?.contractorPos ?? [];
   const contractors = data?.contractors ?? [];
   const payments = data?.payments ?? [];
@@ -1777,6 +1781,7 @@ function FinanceTab({ projectId, bg }: {
   const claimedToDate = Number(bg?.claimedToDate ?? claimedInput ?? 0);
   const totalPoValue = conPos.reduce((s, p) => s + Number(p.poValue), 0);
   const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
+  const totalAllocatedBudget = contractors.reduce((s, c) => s + Number(c.allocatedBudget ?? 0), 0);
   const grossProfit = totalWoValue - totalPoValue;
 
   const paymentsByPoId: Record<string, PoPayment[]> = {};
@@ -1791,7 +1796,11 @@ function FinanceTab({ projectId, bg }: {
     const budget = Number(c.allocatedBudget ?? 0);
     const supplierPayments = pos.flatMap(p => paymentsByPoId[p.id] ?? []);
     const totalPaidToSupplier = supplierPayments.reduce((s, p) => s + Number(p.amount), 0);
-    return { ...c, pos, poTotal, remaining: budget - poTotal, isOver: poTotal > budget && budget > 0, payments: supplierPayments, totalPaidToSupplier };
+    return {
+      ...c, pos, poTotal, remaining: budget - poTotal, isOver: poTotal > budget && budget > 0,
+      payments: supplierPayments, totalPaidToSupplier,
+      isOverClaimed: totalPaidToSupplier > poTotal && poTotal > 0,
+    };
   });
 
   const toggleSupplier = (id: string) =>
@@ -1826,6 +1835,25 @@ function FinanceTab({ projectId, bg }: {
     await fetch(`/api/finance/work-orders/${id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
     }); load();
+  };
+  const reorderWos = async (orderedIds: string[]) => {
+    await fetch(`/api/projects/${projectId}/finance`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "work_orders_reorder", orderedIds }),
+    });
+  };
+  const handleWoDrop = (targetId: string) => {
+    if (!draggedWoId || draggedWoId === targetId) { setDraggedWoId(null); setDragOverWoId(null); return; }
+    const current = [...woOrder];
+    const fromIdx = current.findIndex(w => w.id === draggedWoId);
+    const toIdx = current.findIndex(w => w.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = current.splice(fromIdx, 1);
+    current.splice(toIdx, 0, moved);
+    setWoOrder(current);
+    setDraggedWoId(null);
+    setDragOverWoId(null);
+    reorderWos(current.map(w => w.id));
   };
   const patchPo = async (id: string, patch: Record<string, unknown>) => {
     await fetch(`/api/finance/pos/${id}`, {
@@ -1879,10 +1907,16 @@ function FinanceTab({ projectId, bg }: {
 
         {/* Right: Supplier / Cost side */}
         <div className="flex items-stretch gap-px bg-gray-200 border border-gray-200 rounded-xl overflow-hidden">
+          {/* Allocated Budget */}
+          <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
+            <span className="text-sm text-gray-400 uppercase tracking-wide">Allocated Budget</span>
+            <span className="text-lg font-semibold tabular-nums text-gray-900">{fmtMoney(totalAllocatedBudget)}</span>
+            <span className="text-sm text-gray-400">{contractors.length} supplier{contractors.length !== 1 ? "s" : ""}</span>
+          </div>
           {/* Total PO */}
           <div className="flex flex-col justify-center px-4 py-2.5 bg-white gap-0.5 flex-1 min-w-0">
             <span className="text-sm text-gray-400 uppercase tracking-wide">Total PO</span>
-            <span className="text-lg font-semibold tabular-nums text-amber-600">{fmtMoney(totalPoValue)}</span>
+            <span className={`text-lg font-semibold tabular-nums ${totalPoValue > totalAllocatedBudget && totalAllocatedBudget > 0 ? "text-red-600" : "text-amber-600"}`}>{fmtMoney(totalPoValue)}</span>
             <span className="text-sm text-gray-400">{conPos.length} PO{conPos.length !== 1 ? "s" : ""}</span>
           </div>
           {/* Paid to Suppliers */}
@@ -1913,6 +1947,7 @@ function FinanceTab({ projectId, bg }: {
             <table className="w-full text-base">
               <thead className="sticky top-0 bg-gray-50 z-10">
                 <tr className="text-sm text-gray-400 uppercase tracking-wide">
+                  <th className="w-6 px-1 py-2"></th>
                   <th className="text-left px-3 py-2">WO #</th>
                   <th className="text-left px-3 py-2">Description</th>
                   <th className="text-left px-3 py-2">Type</th>
@@ -1923,7 +1958,17 @@ function FinanceTab({ projectId, bg }: {
               </thead>
               <tbody>
                 {wos.map(wo => (
-                  <tr key={wo.id} className="border-t border-gray-100 hover:bg-gray-50/50">
+                  <tr key={wo.id}
+                    draggable
+                    onDragStart={() => setDraggedWoId(wo.id)}
+                    onDragOver={e => { e.preventDefault(); if (dragOverWoId !== wo.id) setDragOverWoId(wo.id); }}
+                    onDragLeave={() => setDragOverWoId(prev => (prev === wo.id ? null : prev))}
+                    onDrop={e => { e.preventDefault(); handleWoDrop(wo.id); }}
+                    onDragEnd={() => { setDraggedWoId(null); setDragOverWoId(null); }}
+                    className={`border-t hover:bg-gray-50/50 ${dragOverWoId === wo.id && draggedWoId !== wo.id ? "border-t-2 border-t-blue-400" : "border-gray-100"} ${draggedWoId === wo.id ? "opacity-40" : ""}`}>
+                    <td className="px-1 py-2 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500">
+                      <GripVertical className="w-3.5 h-3.5" />
+                    </td>
                     <td className="px-3 py-2">
                       <EditableCell value={wo.woNumber} onSave={v => patchWo(wo.id, { woNumber: v })}
                         inputClass="w-20 font-mono" textClass="font-mono text-gray-700" />
@@ -1958,13 +2003,13 @@ function FinanceTab({ projectId, bg }: {
                   </tr>
                 ))}
                 {wos.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">No work orders yet.</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-sm">No work orders yet.</td></tr>
                 )}
               </tbody>
               {wos.length > 0 && (
                 <tfoot className="sticky bottom-0 bg-gray-50 border-t border-gray-200">
                   <tr>
-                    <td colSpan={4} className="px-3 py-2 text-sm font-medium text-gray-500">Total active</td>
+                    <td colSpan={5} className="px-3 py-2 text-sm font-medium text-gray-500">Total active</td>
                     <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmtMoney(totalWoValue)}</td>
                     <td></td>
                   </tr>
@@ -2121,9 +2166,16 @@ function FinanceTab({ projectId, bg }: {
                         ) : (
                           <p className="px-4 py-3 text-sm text-gray-400">No payment claims recorded.</p>
                         )}
-                        <div className="border-t border-orange-100 bg-orange-50/40 px-4 py-1.5">
-                          <span className="text-xs font-medium text-orange-700">Total paid: </span>
-                          <span className="text-sm font-semibold tabular-nums text-orange-700">{fmtMoney(supplier.totalPaidToSupplier)}</span>
+                        <div className={`border-t px-4 py-1.5 flex items-center justify-between ${supplier.isOverClaimed ? "border-red-200 bg-red-50" : "border-orange-100 bg-orange-50/40"}`}>
+                          <span>
+                            <span className={`text-xs font-medium ${supplier.isOverClaimed ? "text-red-700" : "text-orange-700"}`}>Total paid: </span>
+                            <span className={`text-sm font-semibold tabular-nums ${supplier.isOverClaimed ? "text-red-700" : "text-orange-700"}`}>{fmtMoney(supplier.totalPaidToSupplier)}</span>
+                          </span>
+                          {supplier.isOverClaimed && (
+                            <span className="text-xs font-medium text-red-600">
+                              Exceeds PO by {fmtMoney(supplier.totalPaidToSupplier - supplier.poTotal)}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
