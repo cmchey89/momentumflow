@@ -733,55 +733,31 @@ function BackgroundTab(props: {
           )}
         </div>
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-          <p className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Project details</p>
-          {editing ? (
-            <div className="space-y-2">
-              <input value={bgForm.client ?? ""} onChange={e => setBgForm({ ...bgForm, client: e.target.value })} placeholder="Client" className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1" />
-              <input value={bgForm.poNumber ?? ""} onChange={e => setBgForm({ ...bgForm, poNumber: e.target.value })} placeholder="PO number" className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1" />
-              <div className="flex gap-2">
-                <input type="date" value={bgForm.targetStart ?? ""} onChange={e => setBgForm({ ...bgForm, targetStart: e.target.value })} className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1" />
-                <input type="date" value={bgForm.targetEnd ?? ""} onChange={e => setBgForm({ ...bgForm, targetEnd: e.target.value })} className="w-full text-sm border border-gray-300 rounded-lg px-2 py-1" />
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button onClick={save} className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg">Save</button>
-                <button onClick={() => setEditing(false)} className="border border-gray-300 text-sm px-3 py-1.5 rounded-lg">Cancel</button>
-              </div>
+          <p className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">Finance summary <span className="font-normal normal-case text-gray-400">— live</span></p>
+          <div className="grid grid-cols-2 gap-y-2 gap-x-3">
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Contract Value</p>
+              <p className="text-sm font-semibold tabular-nums text-gray-900">{fmtMoney(financeSummary.totalWoValue)}</p>
             </div>
-          ) : (
-            <div onDoubleClick={() => setEditing(true)} title="Double-click to edit" className="text-sm space-y-1 cursor-text hover:bg-yellow-50 rounded px-1 -mx-1">
-              <Row label="Client" value={bg?.client} />
-              <Row label="PO no." value={bg?.poNumber} />
-              <Row label="Target" value={bg?.targetStart ? `${fmtDate(bg.targetStart)} – ${fmtDate(bg.targetEnd)}` : null} />
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Claimed to Date</p>
+              <p className="text-sm font-semibold tabular-nums text-blue-600">{fmtMoney(financeSummary.claimedToDate)}</p>
             </div>
-          )}
-
-          <div className="border-t border-gray-200 mt-3 pt-3">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Finance summary <span className="font-normal normal-case text-gray-400">— live</span></p>
-            <div className="grid grid-cols-2 gap-y-2 gap-x-3">
-              <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide">Contract Value</p>
-                <p className="text-sm font-semibold tabular-nums text-gray-900">{fmtMoney(financeSummary.totalWoValue)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide">Claimed to Date</p>
-                <p className="text-sm font-semibold tabular-nums text-blue-600">{fmtMoney(financeSummary.claimedToDate)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide">Allocated Budget</p>
-                <p className="text-sm font-semibold tabular-nums text-gray-900">{fmtMoney(financeSummary.totalAllocatedBudget)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide">Total PO</p>
-                <p className={`text-sm font-semibold tabular-nums ${financeSummary.totalPoValue > financeSummary.totalAllocatedBudget && financeSummary.totalAllocatedBudget > 0 ? "text-red-600" : "text-amber-600"}`}>{fmtMoney(financeSummary.totalPoValue)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide">Paid to Suppliers</p>
-                <p className="text-sm font-semibold tabular-nums text-orange-600">{fmtMoney(financeSummary.totalPaid)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wide">Gross Profit</p>
-                <p className={`text-sm font-semibold tabular-nums ${financeSummary.grossProfit >= 0 ? "text-green-700" : "text-red-600"}`}>{fmtMoney(financeSummary.grossProfit)}</p>
-              </div>
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Allocated Budget</p>
+              <p className="text-sm font-semibold tabular-nums text-gray-900">{fmtMoney(financeSummary.totalAllocatedBudget)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Total PO</p>
+              <p className={`text-sm font-semibold tabular-nums ${financeSummary.totalPoValue > financeSummary.totalAllocatedBudget && financeSummary.totalAllocatedBudget > 0 ? "text-red-600" : "text-amber-600"}`}>{fmtMoney(financeSummary.totalPoValue)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Paid to Suppliers</p>
+              <p className="text-sm font-semibold tabular-nums text-orange-600">{fmtMoney(financeSummary.totalPaid)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Gross Profit</p>
+              <p className={`text-sm font-semibold tabular-nums ${financeSummary.grossProfit >= 0 ? "text-green-700" : "text-red-600"}`}>{fmtMoney(financeSummary.grossProfit)}</p>
             </div>
           </div>
         </div>
@@ -1006,14 +982,6 @@ function PlanTab(props: {
   );
 }
 
-function Row({ label, value }: { label: string; value: string | null | undefined }) {
-  return (
-    <div className="flex justify-between border-b border-gray-100 py-1 text-sm">
-      <span className="text-gray-400">{label}</span>
-      <span className="text-gray-800 font-medium">{value || "—"}</span>
-    </div>
-  );
-}
 
 // ── Task Tree (shared structure for Background) ────────────────────────
 
