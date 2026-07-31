@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const [cons, wos, conPos, cClaims, clClaims] = await Promise.all([
     db.select().from(contractors).where(eq(contractors.projectId, id)).orderBy(asc(contractors.sortOrder)),
     db.select().from(workOrders).where(eq(workOrders.projectId, id)).orderBy(asc(workOrders.sortOrder)),
-    db.select().from(contractorPos).where(eq(contractorPos.projectId, id)),
+    db.select().from(contractorPos).where(eq(contractorPos.projectId, id)).orderBy(asc(contractorPos.sortOrder)),
     db.select().from(contractorClaims).where(eq(contractorClaims.projectId, id)),
     db.select().from(clientClaims).where(eq(clientClaims.projectId, id)),
   ]);
@@ -123,14 +123,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       contractorId = con.id;
     }
     if (!contractorId) return NextResponse.json({ error: "Contractor required" }, { status: 400 });
+    const existingPos = await db.select({ sortOrder: contractorPos.sortOrder }).from(contractorPos).where(eq(contractorPos.contractorId, contractorId));
+    const nextSortOrder = existingPos.reduce((max, p) => Math.max(max, p.sortOrder), -1) + 1;
     const [po] = await db.insert(contractorPos).values({
       projectId: id, contractorId,
       poNumber: body.poNumber,
       scope: body.scope || null,
       poValue: String(body.poValue ?? 0),
       issueDate: body.issueDate || null,
+      sortOrder: nextSortOrder,
     }).returning();
     return NextResponse.json(po);
+  }
+
+  if (body.kind === "contractor_pos_reorder") {
+    const orderedIds: string[] = body.orderedIds ?? [];
+    await Promise.all(orderedIds.map((poId, index) =>
+      db.update(contractorPos).set({ sortOrder: index }).where(eq(contractorPos.id, poId))
+    ));
+    return NextResponse.json({ ok: true });
   }
 
   if (body.kind === "po_line_item") {

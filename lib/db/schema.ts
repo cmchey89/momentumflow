@@ -213,6 +213,7 @@ export const contractorPos = pgTable("contractor_pos", {
   poValue: numeric("po_value", { precision: 12, scale: 2 }).notNull().default("0"),
   issueDate: date("issue_date"),
   isCompleted: boolean("is_completed").default(false).notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

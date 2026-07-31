@@ -30,7 +30,7 @@ interface WorkOrder {
 }
 interface ContractorPo {
   id: string; contractorId: string; poNumber: string; scope: string | null;
-  poValue: string; issueDate: string | null; contractorName: string; isCompleted: boolean;
+  poValue: string; issueDate: string | null; contractorName: string; isCompleted: boolean; sortOrder: number;
 }
 interface PoLineItem {
   id: string; poId: string; description: string; unit: string;
@@ -1767,6 +1767,9 @@ function FinanceTab({ projectId, bg }: {
   const [supplierOrder, setSupplierOrder] = useState<Contractor[]>([]);
   const [draggedSupplierId, setDraggedSupplierId] = useState<string | null>(null);
   const [dragOverSupplierId, setDragOverSupplierId] = useState<string | null>(null);
+  const [poOrder, setPoOrder] = useState<ContractorPo[]>([]);
+  const [draggedPoId, setDraggedPoId] = useState<string | null>(null);
+  const [dragOverPoId, setDragOverPoId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     fetch(`/api/projects/${projectId}/finance`).then(r => r.json()).then(setData);
@@ -1775,9 +1778,10 @@ function FinanceTab({ projectId, bg }: {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setWoOrder(data?.workOrders ?? []); }, [data]);
   useEffect(() => { setSupplierOrder(data?.contractors ?? []); }, [data]);
+  useEffect(() => { setPoOrder(data?.contractorPos ?? []); }, [data]);
 
   const wos = woOrder;
-  const conPos = data?.contractorPos ?? [];
+  const conPos = poOrder;
   const contractors = supplierOrder;
   const payments = data?.payments ?? [];
 
@@ -1877,6 +1881,27 @@ function FinanceTab({ projectId, bg }: {
     setDraggedSupplierId(null);
     setDragOverSupplierId(null);
     reorderSuppliers(current.map(s => s.id));
+  };
+  const reorderPos = async (orderedIds: string[]) => {
+    await fetch(`/api/projects/${projectId}/finance`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "contractor_pos_reorder", orderedIds }),
+    });
+  };
+  const handlePoDrop = (supplierId: string, targetId: string) => {
+    if (!draggedPoId || draggedPoId === targetId) { setDraggedPoId(null); setDragOverPoId(null); return; }
+    const subset = poOrder.filter(p => p.contractorId === supplierId);
+    const fromIdx = subset.findIndex(p => p.id === draggedPoId);
+    const toIdx = subset.findIndex(p => p.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = subset.splice(fromIdx, 1);
+    subset.splice(toIdx, 0, moved);
+    const queue = [...subset];
+    const rebuilt = poOrder.map(p => (p.contractorId === supplierId ? queue.shift()! : p));
+    setPoOrder(rebuilt);
+    setDraggedPoId(null);
+    setDragOverPoId(null);
+    reorderPos(subset.map(p => p.id));
   };
   const patchPo = async (id: string, patch: Record<string, unknown>) => {
     await fetch(`/api/finance/pos/${id}`, {
@@ -2114,6 +2139,7 @@ function FinanceTab({ projectId, bg }: {
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="text-xs text-gray-400 uppercase tracking-wide bg-gray-50">
+                              <th className="w-5 px-1 py-1.5"></th>
                               <th className="text-left px-4 py-1.5">PO #</th>
                               <th className="text-left px-3 py-1.5">Scope / Description</th>
                               <th className="text-right px-3 py-1.5">PO Value</th>
@@ -2122,7 +2148,17 @@ function FinanceTab({ projectId, bg }: {
                           </thead>
                           <tbody>
                             {supplier.pos.map(po => (
-                              <tr key={po.id} className="border-t border-gray-100 hover:bg-blue-50/20">
+                              <tr key={po.id}
+                                draggable
+                                onDragStart={() => setDraggedPoId(po.id)}
+                                onDragOver={e => { e.preventDefault(); if (dragOverPoId !== po.id) setDragOverPoId(po.id); }}
+                                onDragLeave={() => setDragOverPoId(prev => (prev === po.id ? null : prev))}
+                                onDrop={e => { e.preventDefault(); handlePoDrop(supplier.id, po.id); }}
+                                onDragEnd={() => { setDraggedPoId(null); setDragOverPoId(null); }}
+                                className={`border-t hover:bg-blue-50/20 ${dragOverPoId === po.id && draggedPoId !== po.id ? "border-t-2 border-t-blue-400" : "border-gray-100"} ${draggedPoId === po.id ? "opacity-40" : ""}`}>
+                                <td className="px-1 py-2 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500">
+                                  <GripVertical className="w-3 h-3" />
+                                </td>
                                 <td className="px-4 py-2">
                                   <EditableCell value={po.poNumber} onSave={v => patchPo(po.id, { poNumber: v })}
                                     inputClass="w-24 font-mono text-sm" textClass="font-mono text-gray-700" />
@@ -2144,13 +2180,13 @@ function FinanceTab({ projectId, bg }: {
                               </tr>
                             ))}
                             {supplier.pos.length === 0 && (
-                              <tr><td colSpan={4} className="px-4 py-3 text-sm text-gray-400">No POs yet.</td></tr>
+                              <tr><td colSpan={5} className="px-4 py-3 text-sm text-gray-400">No POs yet.</td></tr>
                             )}
                           </tbody>
                           {supplier.pos.length > 0 && (
                             <tfoot className="border-t border-blue-100 bg-blue-50/40">
                               <tr>
-                                <td colSpan={2} className="px-4 py-1.5 text-xs font-medium text-blue-700">Total PO</td>
+                                <td colSpan={3} className="px-4 py-1.5 text-xs font-medium text-blue-700">Total PO</td>
                                 <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-sm text-blue-700">{fmtMoney(supplier.poTotal)}</td>
                                 <td></td>
                               </tr>
