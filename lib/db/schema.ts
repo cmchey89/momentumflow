@@ -202,6 +202,17 @@ export const workOrders = pgTable("work_orders", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Claims submitted to the client against a Work Order — mirrors poPayments on the cost side.
+export const woClaims = pgTable("wo_claims", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  woId: uuid("wo_id").references(() => workOrders.id, { onDelete: "cascade" }).notNull(),
+  claimDate: date("claim_date"),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  invoiceRef: text("invoice_ref"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // ── Finance: Contractor POs (Cost) ────────────────────────────────────────
 
 export const contractorPos = pgTable("contractor_pos", {

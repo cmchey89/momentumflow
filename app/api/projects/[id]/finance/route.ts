@@ -3,7 +3,7 @@ import { getSessionFromRequest } from "../../../../../lib/auth/session";
 import { db } from "../../../../../lib/db/client";
 import {
   contractors, contractorClaims, clientClaims,
-  workOrders, contractorPos, poLineItems, poPayments,
+  workOrders, contractorPos, poLineItems, poPayments, woClaims,
 } from "../../../../../lib/db/schema";
 import { eq, inArray, asc } from "drizzle-orm";
 
@@ -21,9 +21,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   ]);
 
   const poIds = conPos.map(p => p.id);
-  const [lineItemRows, paymentRows] = await Promise.all([
+  const woIds = wos.map(w => w.id);
+  const [lineItemRows, paymentRows, woClaimRows] = await Promise.all([
     poIds.length > 0 ? db.select().from(poLineItems).where(inArray(poLineItems.poId, poIds)) : Promise.resolve([]),
     poIds.length > 0 ? db.select().from(poPayments).where(inArray(poPayments.poId, poIds)) : Promise.resolve([]),
+    woIds.length > 0 ? db.select().from(woClaims).where(inArray(woClaims.woId, woIds)) : Promise.resolve([]),
   ]);
 
   const contractorMap = Object.fromEntries(cons.map(c => [c.id, c]));
@@ -38,6 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     contractorPos: enrichedPos,
     lineItems: lineItemRows,
     payments: paymentRows,
+    woClaims: woClaimRows,
     // legacy fields kept for backward compat
     contractorClaims: cClaims,
     clientClaims: clClaims,
@@ -166,6 +169,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       notes: body.notes || null,
     }).returning();
     return NextResponse.json(pay);
+  }
+
+  if (body.kind === "wo_claim") {
+    const [claim] = await db.insert(woClaims).values({
+      woId: body.woId,
+      claimDate: body.claimDate || null,
+      amount: String(body.amount),
+      invoiceRef: body.invoiceRef || null,
+      notes: body.notes || null,
+    }).returning();
+    return NextResponse.json(claim);
   }
 
   return NextResponse.json({ error: "Unknown kind" }, { status: 400 });
