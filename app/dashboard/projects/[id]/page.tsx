@@ -974,7 +974,7 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
             {editMode && editingId === c.id ? (
               <div className="flex items-start gap-1.5" style={{ width: "50%" }}>
                 <textarea autoFocus value={editingText} onChange={e => setEditingText(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(c.id); } if (e.key === "Escape") setEditingId(null); }}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); saveEdit(c.id); } if (e.key === "Escape") setEditingId(null); }}
                   rows={1}
                   onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
                   className="flex-1 min-w-0 text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-sky-300 focus:outline-none resize-none overflow-hidden" />
@@ -989,7 +989,7 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
         {editMode && (
           <div className="flex items-start gap-1.5" style={{ width: "50%" }}>
             <textarea value={draft} onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); submit(); } }}
               onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
               placeholder="Add update or blocker…"
               rows={1}
@@ -1696,7 +1696,7 @@ function CommentBox({ taskId, comments, submitRemark, updateRemark, deleteRemark
             {editingId === c.id ? (
               <div className="flex items-start gap-1.5">
                 <textarea autoFocus value={editingText} onChange={e => setEditingText(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(c.id); } if (e.key === "Escape") setEditingId(null); }}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); saveEdit(c.id); } if (e.key === "Escape") setEditingId(null); }}
                   rows={1}
                   onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
                   className="flex-1 min-w-0 text-sm border border-amber-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-amber-400 focus:outline-none resize-none overflow-hidden" />
@@ -1711,10 +1711,13 @@ function CommentBox({ taskId, comments, submitRemark, updateRemark, deleteRemark
             )}
           </div>
         ))}
-        <div className="flex items-center gap-2 px-2.5 py-2 bg-amber-50/60">
-          <input value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()}
-            placeholder="Add remark…" className="flex-1 text-sm border border-amber-200 rounded-lg px-3 py-2 bg-white focus:border-amber-400 focus:outline-none" />
-          <button onClick={submit} className="text-sm text-amber-600 px-2 font-semibold">Add</button>
+        <div className="flex items-end gap-2 px-2.5 py-2 bg-amber-50/60">
+          <textarea value={draft} onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); submit(); } }}
+            onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
+            rows={1} placeholder="Add remark…"
+            className="flex-1 text-sm border border-amber-200 rounded-lg px-3 py-2 bg-white focus:border-amber-400 focus:outline-none resize-none overflow-hidden" />
+          <button onClick={submit} className="text-sm text-amber-600 px-2 font-semibold flex-shrink-0">Add</button>
           <button onClick={attachPhoto} className="w-8 h-8 border border-amber-200 rounded-lg flex items-center justify-center text-amber-400 flex-shrink-0"><Upload className="w-4 h-4" /></button>
         </div>
       </div>
