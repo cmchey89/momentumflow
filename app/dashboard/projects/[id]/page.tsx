@@ -6,6 +6,7 @@ import {
   ArrowLeft, Plus, ChevronRight, ChevronLeft, MessageSquare, Flag, Trash2,
   Upload, Download, FileText, X, Pencil, Layers, Square, CornerDownRight, GripVertical,
 } from "lucide-react";
+import { getCached, fetchCached } from "../../../../lib/pageCache";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -224,6 +225,30 @@ const TAB_LABELS: Record<"background" | "plan" | "finance", string> = {
 function fmtMoney(n: number) { return `$${n.toLocaleString()}`; }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "—"; }
 
+// Shown only on a genuinely cold visit (nothing cached yet) so the page never
+// flashes blank while the initial project/background/stages fetch resolves.
+function TabSkeleton() {
+  return (
+    <div className="animate-pulse">
+      <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="bg-gray-100 rounded-xl h-32" />
+        <div className="bg-gray-100 rounded-xl h-32" />
+      </div>
+      <div className="h-4 bg-gray-100 rounded w-40 mb-3" />
+      <div className="flex gap-2 mb-6">
+        <div className="h-8 bg-gray-100 rounded-lg w-32" />
+        <div className="h-8 bg-gray-100 rounded-lg w-32" />
+      </div>
+      <div className="h-4 bg-gray-100 rounded w-56 mb-3" />
+      <div className="space-y-2">
+        <div className="h-10 bg-gray-100 rounded-lg" />
+        <div className="h-10 bg-gray-100 rounded-lg" />
+        <div className="h-10 bg-gray-100 rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
 // Press and hold ~1s (without moving) to start a drag, so a normal click/tap
 // still works for opening rows or triggering rename. Movement before the
 // timer fires cancels it (treated as a scroll or misclick, not a drag).
@@ -250,18 +275,24 @@ function longPressHandlers(onActivate: () => void, delay = 500) {
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [tab, setTab] = useState<"background" | "plan" | "finance">("background");
-  const [project, setProject] = useState<Project | null>(null);
+  const projectUrl = `/api/projects/${id}`;
+  const backgroundUrl = `/api/projects/${id}/background`;
+  const stagesUrl = `/api/projects/${id}/stages`;
+  const [project, setProject] = useState<Project | null>(() => getCached(projectUrl) ?? null);
 
-  // background
-  const [bg, setBg] = useState<Background | null>(null);
-  const [files, setFiles] = useState<ProjFile[]>([]);
+  // background — primed from cache so revisiting a project (or switching back to
+  // this tab) renders instantly instead of flashing blank while the refetch runs.
+  const cachedBackground = getCached<{ background: Background | null; files: ProjFile[] }>(backgroundUrl);
+  const [bg, setBg] = useState<Background | null>(() => cachedBackground?.background ?? null);
+  const [files, setFiles] = useState<ProjFile[]>(() => cachedBackground?.files ?? []);
   const [editingBg, setEditingBg] = useState(false);
-  const [bgForm, setBgForm] = useState<Background>({ why: "", client: "", poNumber: "", poValue: null, targetStart: "", targetEnd: "", markupPct: "0", claimedToDate: "0" });
+  const [bgForm, setBgForm] = useState<Background>(() => cachedBackground?.background ?? { why: "", client: "", poNumber: "", poValue: null, targetStart: "", targetEnd: "", markupPct: "0", claimedToDate: "0" });
 
   // stages/tasks
-  const [stages, setStages] = useState<Stage[]>([]);
-  const [tasks, setTasks] = useState<PlanTask[]>([]);
-  const [comments, setComments] = useState<Comment[]>([]);
+  const cachedStages = getCached<{ stages: Stage[]; tasks: PlanTask[]; comments: Comment[] }>(stagesUrl);
+  const [stages, setStages] = useState<Stage[]>(() => cachedStages?.stages ?? []);
+  const [tasks, setTasks] = useState<PlanTask[]>(() => cachedStages?.tasks ?? []);
+  const [comments, setComments] = useState<Comment[]>(() => cachedStages?.comments ?? []);
   const [openTasks, setOpenTasks] = useState<Set<string>>(new Set());
   const [openComments, setOpenComments] = useState<Set<string>>(new Set());
   const [addingTaskFor, setAddingTaskFor] = useState<{ stageId: string; parentId: string | null } | null>(null);
@@ -284,23 +315,29 @@ export default function ProjectDetailPage() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
+  // True only on a genuinely cold visit (nothing cached yet) — drives the skeleton.
+  const [initialLoading, setInitialLoading] = useState(!cachedBackground && !cachedStages);
+
   const loadBackground = useCallback(() => {
-    fetch(`/api/projects/${id}/background`).then(r => r.json()).then(d => {
+    fetchCached<{ background: Background | null; files: ProjFile[] }>(backgroundUrl).then(d => {
       setBg(d.background); setFiles(d.files);
       if (d.background) setBgForm(d.background);
     });
-  }, [id]);
+  }, [backgroundUrl]);
 
   const loadStages = useCallback(() => {
-    fetch(`/api/projects/${id}/stages`).then(r => r.json()).then(d => {
+    fetchCached<{ stages: Stage[]; tasks: PlanTask[]; comments: Comment[] }>(stagesUrl).then(d => {
       setStages(d.stages); setTasks(d.tasks); setComments(d.comments);
     });
-  }, [id]);
+  }, [stagesUrl]);
 
   useEffect(() => {
-    fetch(`/api/projects/${id}`).then(r => r.json()).then(setProject);
-    loadBackground(); loadStages();
-  }, [id, loadBackground, loadStages]);
+    Promise.all([
+      fetchCached<Project>(projectUrl).then(setProject),
+      loadBackground(),
+      loadStages(),
+    ]).finally(() => setInitialLoading(false));
+  }, [id, projectUrl, loadBackground, loadStages]);
 
   // ── Background handlers ──
   const saveBg = async () => {
@@ -572,35 +609,43 @@ export default function ProjectDetailPage() {
         ))}
       </div>
 
-      {tab === "background" && (
-        <BackgroundTab
-          bg={bg} bgForm={bgForm} setBgForm={setBgForm} editing={editingBg} setEditing={setEditingBg} save={saveBg}
-          files={files} addFile={addFile} deleteFile={deleteFile}
-          stages={stages} tasks={tasks} comments={comments} submitRemark={submitRemark}
-          updateRemark={updateRemark} deleteRemark={deleteRemark}
-          openTasks={openTasks} toggleOpen={toggleOpen}
-          projectId={id}
-        />
-      )}
+      {initialLoading ? (
+        <TabSkeleton />
+      ) : (
+        <>
+          {/* All three tabs stay mounted once loaded and are just shown/hidden —
+              switching tabs never re-fetches or flashes empty again. */}
+          <div className={tab === "background" ? "" : "hidden"}>
+            <BackgroundTab
+              bg={bg} bgForm={bgForm} setBgForm={setBgForm} editing={editingBg} setEditing={setEditingBg} save={saveBg}
+              files={files} addFile={addFile} deleteFile={deleteFile}
+              stages={stages} tasks={tasks} comments={comments} submitRemark={submitRemark}
+              updateRemark={updateRemark} deleteRemark={deleteRemark}
+              openTasks={openTasks} toggleOpen={toggleOpen}
+              projectId={id}
+            />
+          </div>
 
-      {tab === "plan" && (
-        <PlanTab
-          stages={stages} tasks={tasks} comments={comments}
-          openTasks={openTasks} toggleOpen={toggleOpen} expandAllTasks={expandAllTasks} collapseAllTasks={collapseAllTasks}
-          openComments={openComments} toggleComments={toggleComments} closeAllComments={closeAllComments}
-          submitRemark={submitRemark} attachPhoto={attachPhoto}
-          updateRemark={updateRemark} deleteRemark={deleteRemark}
-          toggleMilestone={toggleMilestone} deleteTask={deleteTask} patchTask={patchTask} patchStage={patchStage}
-          addStage={addStage} deleteStage={deleteStage}
-          addingTaskFor={addingTaskFor} setAddingTaskFor={setAddingTaskFor} addTask={addTask}
-          taskView={taskView} setTaskView={setTaskView}
-          dragging={dragging} hoverId={hoverId} startDrag={startDrag}
-          showBulkImport={showBulkImport} setShowBulkImport={setShowBulkImport}
-        />
-      )}
+          <div className={tab === "plan" ? "" : "hidden"}>
+            <PlanTab
+              stages={stages} tasks={tasks} comments={comments}
+              openTasks={openTasks} toggleOpen={toggleOpen} expandAllTasks={expandAllTasks} collapseAllTasks={collapseAllTasks}
+              openComments={openComments} toggleComments={toggleComments} closeAllComments={closeAllComments}
+              submitRemark={submitRemark} attachPhoto={attachPhoto}
+              updateRemark={updateRemark} deleteRemark={deleteRemark}
+              toggleMilestone={toggleMilestone} deleteTask={deleteTask} patchTask={patchTask} patchStage={patchStage}
+              addStage={addStage} deleteStage={deleteStage}
+              addingTaskFor={addingTaskFor} setAddingTaskFor={setAddingTaskFor} addTask={addTask}
+              taskView={taskView} setTaskView={setTaskView}
+              dragging={dragging} hoverId={hoverId} startDrag={startDrag}
+              showBulkImport={showBulkImport} setShowBulkImport={setShowBulkImport}
+            />
+          </div>
 
-      {tab === "finance" && (
-        <FinanceTab projectId={id} />
+          <div className={tab === "finance" ? "" : "hidden"}>
+            <FinanceTab projectId={id} />
+          </div>
+        </>
       )}
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} onExport={doExport} />}
@@ -702,11 +747,12 @@ function BackgroundTab(props: {
 }) {
   const { bg, bgForm, setBgForm, editing, setEditing, save, files, addFile, deleteFile, stages, tasks, comments, submitRemark, updateRemark, deleteRemark, openTasks, toggleOpen, projectId } = props;
   const [notesEditMode, setNotesEditMode] = useState(false);
-  const [finance, setFinance] = useState<FinanceData | null>(null);
+  const financeUrl = `/api/projects/${projectId}/finance`;
+  const [finance, setFinance] = useState<FinanceData | null>(() => getCached(financeUrl) ?? null);
 
   useEffect(() => {
-    fetch(`/api/projects/${projectId}/finance`).then(r => r.json()).then(setFinance);
-  }, [projectId]);
+    fetchCached<FinanceData>(financeUrl).then(setFinance);
+  }, [financeUrl]);
 
   const financeSummary = (() => {
     const wos = finance?.workOrders ?? [];
@@ -1777,7 +1823,8 @@ interface FinanceData {
 function FinanceTab({ projectId }: {
   projectId: string;
 }) {
-  const [data, setData] = useState<FinanceData | null>(null);
+  const financeUrl = `/api/projects/${projectId}/finance`;
+  const [data, setData] = useState<FinanceData | null>(() => getCached(financeUrl) ?? null);
   const [expandedSuppliers, setExpandedSuppliers] = useState<Set<string>>(new Set());
   const [showWoForm, setShowWoForm] = useState(false);
   const [showSupplierForm, setShowSupplierForm] = useState(false);
@@ -1796,8 +1843,8 @@ function FinanceTab({ projectId }: {
   const [dragOverPoId, setDragOverPoId] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    fetch(`/api/projects/${projectId}/finance`).then(r => r.json()).then(setData);
-  }, [projectId]);
+    fetchCached<FinanceData>(financeUrl).then(setData);
+  }, [financeUrl]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setWoOrder(data?.workOrders ?? []); }, [data]);
