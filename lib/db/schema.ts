@@ -202,6 +202,8 @@ export const workOrders = pgTable("work_orders", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const woClaimStatusEnum = pgEnum("wo_claim_status", ["submitted", "invoiced", "received"]);
+
 // Claims submitted to the client against a Work Order — mirrors poPayments on the cost side.
 export const woClaims = pgTable("wo_claims", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -210,6 +212,7 @@ export const woClaims = pgTable("wo_claims", {
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
   invoiceRef: text("invoice_ref"),
   notes: text("notes"),
+  status: woClaimStatusEnum("status").default("submitted").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

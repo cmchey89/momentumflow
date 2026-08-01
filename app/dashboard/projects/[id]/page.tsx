@@ -24,6 +24,7 @@ interface Background {
 
 type WoType = "original" | "variation";
 type WoStatus = "active" | "superseded";
+type WoClaimStatus = "submitted" | "invoiced" | "received";
 interface WorkOrder {
   id: string; woNumber: string; description: string | null;
   type: WoType; status: WoStatus; contractValue: string; issueDate: string | null; sortOrder: number;
@@ -42,7 +43,7 @@ interface PoPayment {
 }
 interface WoClaim {
   id: string; woId: string; claimDate: string | null;
-  amount: string; invoiceRef: string | null; notes: string | null;
+  amount: string; invoiceRef: string | null; notes: string | null; status: WoClaimStatus;
 }
 interface ProjFile { id: string; name: string; url: string }
 
@@ -1938,6 +1939,11 @@ function FinanceTab({ projectId }: {
   const deleteWoClaim = async (id: string) => {
     await fetch(`/api/finance/wo-claims/${id}`, { method: "DELETE" }); load();
   };
+  const patchWoClaim = async (id: string, patch: Record<string, unknown>) => {
+    await fetch(`/api/finance/wo-claims/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+    }); load();
+  };
   const patchContractor = async (contractorId: string, patch: Record<string, unknown>) => {
     await fetch(`/api/finance/contractors/${contractorId}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
@@ -2089,6 +2095,7 @@ function FinanceTab({ projectId }: {
                               <thead>
                                 <tr className="text-xs text-gray-400 uppercase tracking-wide bg-gray-50">
                                   <th className="text-left px-4 py-1.5">Date</th>
+                                  <th className="text-left px-3 py-1.5">Status</th>
                                   <th className="text-left px-3 py-1.5">Invoice Ref</th>
                                   <th className="text-left px-3 py-1.5">Notes</th>
                                   <th className="text-right px-3 py-1.5">Amount</th>
@@ -2099,6 +2106,17 @@ function FinanceTab({ projectId }: {
                                 {woClaimsForWo.map(claim => (
                                   <tr key={claim.id} className="border-t border-gray-100 hover:bg-green-50/20">
                                     <td className="px-4 py-2 text-gray-600">{claim.claimDate || <span className="text-gray-300">—</span>}</td>
+                                    <td className="px-3 py-2">
+                                      <select value={claim.status} onChange={e => patchWoClaim(claim.id, { status: e.target.value })}
+                                        className={`text-xs rounded-full px-2 py-0.5 border-none outline-none cursor-pointer ${
+                                          claim.status === "received" ? "bg-green-50 text-green-700"
+                                          : claim.status === "invoiced" ? "bg-amber-50 text-amber-700"
+                                          : "bg-gray-100 text-gray-500"}`}>
+                                        <option value="submitted">Submitted to Finance</option>
+                                        <option value="invoiced">Invoiced (Pending Receipt)</option>
+                                        <option value="received">Received</option>
+                                      </select>
+                                    </td>
                                     <td className="px-3 py-2 font-mono text-gray-600">{claim.invoiceRef || <span className="text-gray-300">—</span>}</td>
                                     <td className="px-3 py-2 text-gray-500">{claim.notes || <span className="text-gray-300">—</span>}</td>
                                     <td className="px-3 py-2 text-right font-semibold tabular-nums text-green-600">{fmtMoney(Number(claim.amount))}</td>

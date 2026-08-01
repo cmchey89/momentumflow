@@ -14,6 +14,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (body.claimDate !== undefined) patch.claimDate = body.claimDate || null;
   if (body.invoiceRef !== undefined) patch.invoiceRef = body.invoiceRef || null;
   if (body.notes !== undefined) patch.notes = body.notes || null;
+  if (body.status !== undefined) patch.status = body.status;
   await db.update(woClaims).set(patch).where(eq(woClaims.id, id));
   return NextResponse.json({ ok: true });
 }
