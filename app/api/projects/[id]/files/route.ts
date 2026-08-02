@@ -7,10 +7,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const session = getSessionFromRequest(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
-  const { name, url } = await req.json().catch(() => ({}));
+  const { name, url, pathname } = await req.json().catch(() => ({}));
   if (!name || !url) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   const [file] = await db.insert(projectFiles).values({
-    projectId: id, name, url, uploadedBy: session.id,
+    projectId: id, name, url, pathname: pathname ?? null, uploadedBy: session.id,
   }).returning();
   return NextResponse.json(file);
 }

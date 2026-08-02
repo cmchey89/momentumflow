@@ -99,11 +99,15 @@ export const projectBackground = pgTable("project_background", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// pathname is set for real uploads (private Vercel Blob) and served through an
+// authenticated proxy route; it's null for legacy rows that just stored a
+// manually-typed external URL, which keep linking out directly via `url`.
 export const projectFiles = pgTable("project_files", {
   id: uuid("id").defaultRandom().primaryKey(),
   projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   url: text("url").notNull(),
+  pathname: text("pathname"),
   uploadedBy: text("uploaded_by").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -147,6 +151,7 @@ export const taskComments = pgTable("task_comments", {
   authorName: text("author_name").notNull(),
   text: text("text"),
   imageUrl: text("image_url"),
+  imagePathname: text("image_pathname"),
   flagged: boolean("flagged").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

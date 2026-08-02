@@ -7,6 +7,7 @@ import {
   Upload, Download, FileText, X, Pencil, Layers, Square, CornerDownRight, GripVertical,
 } from "lucide-react";
 import { getCached, fetchCached } from "../../../../lib/pageCache";
+import { upload } from "@vercel/blob/client";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -46,7 +47,7 @@ interface WoClaim {
   id: string; woId: string; claimDate: string | null;
   amount: string; invoiceRef: string | null; notes: string | null; status: WoClaimStatus;
 }
-interface ProjFile { id: string; name: string; url: string }
+interface ProjFile { id: string; name: string; url: string; pathname: string | null }
 
 type StageStatus = "pending" | "in_progress" | "done";
 
@@ -59,7 +60,7 @@ interface PlanTask {
   isMilestone: boolean; sortOrder: number; status: StageStatus;
   planStart: string | null; planEnd: string | null; actualStart: string | null; actualEnd: string | null;
 }
-interface Comment { id: string; taskId: string; authorName: string; text: string | null; imageUrl: string | null; flagged: boolean; createdAt: string }
+interface Comment { id: string; taskId: string; authorName: string; text: string | null; imageUrl: string | null; imagePathname: string | null; flagged: boolean; createdAt: string }
 
 type ClaimStatus = "pending" | "submitted" | "approved" | "paid";
 interface Contractor { id: string; name: string; scope: string | null; allocatedBudget: string; sortOrder: number }
@@ -225,6 +226,13 @@ const TAB_LABELS: Record<"background" | "plan" | "finance", string> = {
 function fmtMoney(n: number) { return `$${n.toLocaleString()}`; }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "—"; }
 
+// Files uploaded through the app go through this authenticated proxy instead
+// of linking straight to the private blob URL (which requires the SDK + a
+// session to resolve). Legacy rows with no pathname just link to `url` directly.
+function blobDownloadHref(pathname: string, name: string) {
+  return `/api/blob/download?pathname=${encodeURIComponent(pathname)}&name=${encodeURIComponent(name)}`;
+}
+
 // Alt+Enter doesn't insert a newline in a textarea by default on Windows/Chrome
 // (Alt is treated as an accelerator key), unlike Shift+Enter which does natively.
 // Splice the newline in manually and restore the cursor + auto-grow height.
@@ -363,12 +371,19 @@ export default function ProjectDetailPage() {
     });
     setEditingBg(false); loadBackground();
   };
-  const addFile = async () => {
-    const name = prompt("File name (e.g. network_diagram.png)");
-    if (!name) return;
-    const url = prompt("File URL") || "#";
-    await fetch(`/api/projects/${id}/files`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, url }) });
-    loadBackground();
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const addFile = async (file: File) => {
+    setUploadingFile(true);
+    try {
+      const blob = await upload(file.name, file, { access: "private", handleUploadUrl: "/api/blob/upload" });
+      await fetch(`/api/projects/${id}/files`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: file.name, url: blob.url, pathname: blob.pathname }),
+      });
+      loadBackground();
+    } finally {
+      setUploadingFile(false);
+    }
   };
   const deleteFile = async (fileId: string) => {
     if (!confirm("Remove this file from the project?")) return;
@@ -539,7 +554,7 @@ export default function ProjectDetailPage() {
   const submitRemark = async (taskId: string, text: string) => {
     if (!text.trim()) return;
     const tempId = `temp-${Date.now()}`;
-    setComments(prev => [...prev, { id: tempId, taskId, authorName: "You", text, imageUrl: null, flagged: false, createdAt: new Date().toISOString() }]);
+    setComments(prev => [...prev, { id: tempId, taskId, authorName: "You", text, imageUrl: null, imagePathname: null, flagged: false, createdAt: new Date().toISOString() }]);
     const res = await fetch(`/api/plan-tasks/${taskId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
     const comment = await res.json();
     setComments(prev => prev.map(c => c.id === tempId ? comment : c));
@@ -554,12 +569,26 @@ export default function ProjectDetailPage() {
     setComments(prev => prev.filter(c => c.id !== commentId));
     if (target) await fetch(`/api/plan-tasks/${target.taskId}/comments/${commentId}`, { method: "DELETE" });
   };
-  const attachPhoto = async (taskId: string) => {
-    const url = prompt("Photo URL (placeholder — no file storage wired up yet)");
-    if (!url) return;
+  // A single hidden file input shared by every "attach photo" button in the
+  // tree -- attachPhoto(taskId) just remembers which task triggered it and
+  // opens the picker, so no prop-type threading changes anywhere else.
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [pendingPhotoTaskId, setPendingPhotoTaskId] = useState<string | null>(null);
+  const attachPhoto = (taskId: string) => {
+    setPendingPhotoTaskId(taskId);
+    photoInputRef.current?.click();
+  };
+  const handlePhotoSelected = async (file: File) => {
+    const taskId = pendingPhotoTaskId;
+    setPendingPhotoTaskId(null);
+    if (!taskId) return;
+    const blob = await upload(file.name, file, { access: "private", handleUploadUrl: "/api/blob/upload" });
     const tempId = `temp-${Date.now()}`;
-    setComments(prev => [...prev, { id: tempId, taskId, authorName: "You", text: null, imageUrl: url, flagged: false, createdAt: new Date().toISOString() }]);
-    const res = await fetch(`/api/plan-tasks/${taskId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageUrl: url, text: null }) });
+    setComments(prev => [...prev, { id: tempId, taskId, authorName: "You", text: null, imageUrl: blob.url, imagePathname: blob.pathname, flagged: false, createdAt: new Date().toISOString() }]);
+    const res = await fetch(`/api/plan-tasks/${taskId}/comments`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageUrl: blob.url, imagePathname: blob.pathname, text: null }),
+    });
     const comment = await res.json();
     setComments(prev => prev.map(c => c.id === tempId ? comment : c));
   };
@@ -640,7 +669,7 @@ export default function ProjectDetailPage() {
           <div className={tab === "background" ? "" : "hidden"}>
             <BackgroundTab
               bg={bg} bgForm={bgForm} setBgForm={setBgForm} editing={editingBg} setEditing={setEditingBg} save={saveBg}
-              files={files} addFile={addFile} deleteFile={deleteFile}
+              files={files} addFile={addFile} uploadingFile={uploadingFile} deleteFile={deleteFile}
               stages={stages} tasks={tasks} comments={comments} submitRemark={submitRemark}
               updateRemark={updateRemark} deleteRemark={deleteRemark}
               openTasks={openTasks} toggleOpen={toggleOpen}
@@ -669,6 +698,9 @@ export default function ProjectDetailPage() {
           </div>
         </>
       )}
+
+      <input ref={photoInputRef} type="file" accept="image/*" className="hidden"
+        onChange={e => { const file = e.target.files?.[0]; if (file) handlePhotoSelected(file); e.target.value = ""; }} />
 
       {showExport && <ExportModal onClose={() => setShowExport(false)} onExport={doExport} />}
       {showImport && (
@@ -759,7 +791,7 @@ function EditableName({ value, onSave, className }: { value: string; onSave: (v:
 
 function BackgroundTab(props: {
   bg: Background | null; bgForm: Background; setBgForm: (b: Background) => void; editing: boolean; setEditing: (b: boolean) => void; save: () => void;
-  files: ProjFile[]; addFile: () => void; deleteFile: (fileId: string) => void;
+  files: ProjFile[]; addFile: (file: File) => void; uploadingFile: boolean; deleteFile: (fileId: string) => void;
   stages: Stage[]; tasks: PlanTask[]; comments: Comment[];
   submitRemark: (taskId: string, text: string) => void;
   updateRemark: (commentId: string, patch: { text?: string; flagged?: boolean }) => void;
@@ -767,7 +799,7 @@ function BackgroundTab(props: {
   openTasks: Set<string>; toggleOpen: (id: string) => void;
   projectId: string;
 }) {
-  const { bg, bgForm, setBgForm, editing, setEditing, save, files, addFile, deleteFile, stages, tasks, comments, submitRemark, updateRemark, deleteRemark, openTasks, toggleOpen, projectId } = props;
+  const { bg, bgForm, setBgForm, editing, setEditing, save, files, addFile, uploadingFile, deleteFile, stages, tasks, comments, submitRemark, updateRemark, deleteRemark, openTasks, toggleOpen, projectId } = props;
   const [notesEditMode, setNotesEditMode] = useState(false);
   const financeUrl = `/api/projects/${projectId}/finance`;
   const [finance, setFinance] = useState<FinanceData | null>(() => getCached(financeUrl) ?? null);
@@ -840,7 +872,7 @@ function BackgroundTab(props: {
       <div className="flex gap-2 flex-wrap mb-6">
         {files.map(f => (
           <div key={f.id} className="flex items-center gap-1.5 border border-gray-200 rounded-lg pl-2.5 pr-1.5 py-1.5 text-sm bg-white hover:border-blue-300">
-            <a href={f.url} target="_blank" className="flex items-center gap-1.5">
+            <a href={f.pathname ? blobDownloadHref(f.pathname, f.name) : f.url} target="_blank" className="flex items-center gap-1.5">
               <FileText className="w-3.5 h-3.5 text-gray-400" /> {f.name}
             </a>
             <button onClick={() => deleteFile(f.id)} title="Remove file" className="text-gray-300 hover:text-red-500 p-0.5">
@@ -848,9 +880,11 @@ function BackgroundTab(props: {
             </button>
           </div>
         ))}
-        <button onClick={addFile} className="flex items-center gap-1.5 border border-dashed border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-500 hover:border-blue-300">
-          <Upload className="w-3.5 h-3.5" /> Upload…
-        </button>
+        <label className="flex items-center gap-1.5 border border-dashed border-gray-300 rounded-lg px-2.5 py-1.5 text-sm text-gray-500 hover:border-blue-300 cursor-pointer">
+          <Upload className="w-3.5 h-3.5" /> {uploadingFile ? "Uploading…" : "Upload…"}
+          <input type="file" className="hidden" disabled={uploadingFile}
+            onChange={e => { const file = e.target.files?.[0]; if (file) addFile(file); e.target.value = ""; }} />
+        </label>
       </div>
 
       <div className="border-t border-gray-100 pt-5">
@@ -1731,7 +1765,10 @@ function CommentBox({ taskId, comments, submitRemark, updateRemark, deleteRemark
             ) : (
               <>
                 {c.text && <p className="text-sm text-gray-700 mt-0.5">{c.text}</p>}
-                {c.imageUrl && <a href={c.imageUrl} target="_blank" className="text-sm text-amber-600 flex items-center gap-1 mt-1"><FileText className="w-3.5 h-3.5" /> Photo attached</a>}
+                {c.imageUrl && (
+                  <a href={c.imagePathname ? blobDownloadHref(c.imagePathname, "photo") : c.imageUrl} target="_blank"
+                    className="text-sm text-amber-600 flex items-center gap-1 mt-1"><FileText className="w-3.5 h-3.5" /> Photo attached</a>
+                )}
               </>
             )}
           </div>

@@ -16,11 +16,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tas
   const session = getSessionFromRequest(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { taskId } = await params;
-  const { text, imageUrl } = await req.json().catch(() => ({}));
+  const { text, imageUrl, imagePathname } = await req.json().catch(() => ({}));
   if (!text && !imageUrl) return NextResponse.json({ error: "Empty remark" }, { status: 400 });
   const [comment] = await db.insert(taskComments).values({
     taskId, authorId: session.id, authorName: session.name,
-    text: text || null, imageUrl: imageUrl || null,
+    text: text || null, imageUrl: imageUrl || null, imagePathname: imagePathname || null,
   }).returning();
   return NextResponse.json(comment);
 }
