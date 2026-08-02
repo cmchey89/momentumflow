@@ -147,6 +147,7 @@ export const taskComments = pgTable("task_comments", {
   authorName: text("author_name").notNull(),
   text: text("text"),
   imageUrl: text("image_url"),
+  flagged: boolean("flagged").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

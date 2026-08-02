@@ -59,7 +59,7 @@ interface PlanTask {
   isMilestone: boolean; sortOrder: number; status: StageStatus;
   planStart: string | null; planEnd: string | null; actualStart: string | null; actualEnd: string | null;
 }
-interface Comment { id: string; taskId: string; authorName: string; text: string | null; imageUrl: string | null; createdAt: string }
+interface Comment { id: string; taskId: string; authorName: string; text: string | null; imageUrl: string | null; flagged: boolean; createdAt: string }
 
 type ClaimStatus = "pending" | "submitted" | "approved" | "paid";
 interface Contractor { id: string; name: string; scope: string | null; allocatedBudget: string; sortOrder: number }
@@ -539,15 +539,15 @@ export default function ProjectDetailPage() {
   const submitRemark = async (taskId: string, text: string) => {
     if (!text.trim()) return;
     const tempId = `temp-${Date.now()}`;
-    setComments(prev => [...prev, { id: tempId, taskId, authorName: "You", text, imageUrl: null, createdAt: new Date().toISOString() }]);
+    setComments(prev => [...prev, { id: tempId, taskId, authorName: "You", text, imageUrl: null, flagged: false, createdAt: new Date().toISOString() }]);
     const res = await fetch(`/api/plan-tasks/${taskId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
     const comment = await res.json();
     setComments(prev => prev.map(c => c.id === tempId ? comment : c));
   };
-  const updateRemark = async (commentId: string, text: string) => {
+  const updateRemark = async (commentId: string, patch: { text?: string; flagged?: boolean }) => {
     const target = comments.find(c => c.id === commentId);
-    setComments(prev => prev.map(c => c.id === commentId ? { ...c, text } : c));
-    if (target) await fetch(`/api/plan-tasks/${target.taskId}/comments/${commentId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    setComments(prev => prev.map(c => c.id === commentId ? { ...c, ...patch } : c));
+    if (target) await fetch(`/api/plan-tasks/${target.taskId}/comments/${commentId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
   };
   const deleteRemark = async (commentId: string) => {
     const target = comments.find(c => c.id === commentId);
@@ -558,7 +558,7 @@ export default function ProjectDetailPage() {
     const url = prompt("Photo URL (placeholder — no file storage wired up yet)");
     if (!url) return;
     const tempId = `temp-${Date.now()}`;
-    setComments(prev => [...prev, { id: tempId, taskId, authorName: "You", text: null, imageUrl: url, createdAt: new Date().toISOString() }]);
+    setComments(prev => [...prev, { id: tempId, taskId, authorName: "You", text: null, imageUrl: url, flagged: false, createdAt: new Date().toISOString() }]);
     const res = await fetch(`/api/plan-tasks/${taskId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageUrl: url, text: null }) });
     const comment = await res.json();
     setComments(prev => prev.map(c => c.id === tempId ? comment : c));
@@ -762,7 +762,7 @@ function BackgroundTab(props: {
   files: ProjFile[]; addFile: () => void; deleteFile: (fileId: string) => void;
   stages: Stage[]; tasks: PlanTask[]; comments: Comment[];
   submitRemark: (taskId: string, text: string) => void;
-  updateRemark: (commentId: string, text: string) => void;
+  updateRemark: (commentId: string, patch: { text?: string; flagged?: boolean }) => void;
   deleteRemark: (commentId: string) => void;
   openTasks: Set<string>; toggleOpen: (id: string) => void;
   projectId: string;
@@ -873,7 +873,7 @@ function BackgroundTab(props: {
 function StatusTaskTree({ stages, tasks, comments, submitRemark, updateRemark, deleteRemark, openTasks, toggleOpen, editMode }: {
   stages: Stage[]; tasks: PlanTask[]; comments: Comment[];
   submitRemark: (taskId: string, text: string) => void;
-  updateRemark: (commentId: string, text: string) => void;
+  updateRemark: (commentId: string, patch: { text?: string; flagged?: boolean }) => void;
   deleteRemark: (commentId: string) => void;
   openTasks: Set<string>; toggleOpen: (id: string) => void; editMode: boolean;
 }) {
@@ -916,7 +916,7 @@ function StatusTaskTree({ stages, tasks, comments, submitRemark, updateRemark, d
 function StatusTaskRow({ task, subTasks, comments, submitRemark, updateRemark, deleteRemark, openTasks, toggleOpen, editMode }: {
   task: PlanTask; subTasks: PlanTask[]; comments: Comment[];
   submitRemark: (taskId: string, text: string) => void;
-  updateRemark: (commentId: string, text: string) => void;
+  updateRemark: (commentId: string, patch: { text?: string; flagged?: boolean }) => void;
   deleteRemark: (commentId: string) => void;
   openTasks: Set<string>; toggleOpen: (id: string) => void; editMode: boolean;
 }) {
@@ -958,7 +958,7 @@ function StatusTaskRow({ task, subTasks, comments, submitRemark, updateRemark, d
 function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark, indent, editMode }: {
   taskId: string; comments: Comment[];
   submitRemark: (taskId: string, text: string) => void;
-  updateRemark: (commentId: string, text: string) => void;
+  updateRemark: (commentId: string, patch: { text?: string; flagged?: boolean }) => void;
   deleteRemark: (commentId: string) => void;
   indent: string; editMode: boolean;
 }) {
@@ -969,7 +969,7 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
 
   const submit = () => { if (draft.trim()) { submitRemark(taskId, draft); setDraft(""); } };
   const saveEdit = (commentId: string) => {
-    if (editingText.trim()) updateRemark(commentId, editingText.trim());
+    if (editingText.trim()) updateRemark(commentId, { text: editingText.trim() });
     setEditingId(null); setEditingText("");
   };
 
@@ -981,9 +981,11 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
     <div className={`grid grid-cols-[minmax(0,1fr)_90px_90px_90px_90px] gap-1 ${indent} pr-2.5 border-b border-gray-100`}>
       <div className="py-1.5 space-y-1.5 min-w-0 overflow-hidden">
         {notes.map(c => (
-          <div key={c.id} className="rounded-lg bg-amber-50 border border-amber-100 px-2.5 py-1.5" style={{ width: "50%" }}>
-            {/* header row: author · date + edit/delete */}
+          <div key={c.id} className={`rounded-lg border px-2.5 py-1.5 ${c.flagged ? "bg-amber-50 border-amber-200" : "bg-white border-gray-200"}`} style={{ width: "50%" }}>
+            {/* header row: flag · author · date + edit/delete */}
             <div className="flex items-center gap-2 mb-0.5">
+              <input type="checkbox" checked={c.flagged} onChange={e => updateRemark(c.id, { flagged: e.target.checked })}
+                title="Mark for discussion" className="w-3.5 h-3.5 accent-amber-500 cursor-pointer flex-shrink-0" />
               <span className="text-xs text-gray-400">{new Date(c.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}</span>
               {editMode && editingId !== c.id && (
                 <>
@@ -1033,7 +1035,7 @@ function PlanTab(props: {
   openTasks: Set<string>; toggleOpen: (id: string) => void; expandAllTasks: () => void; collapseAllTasks: () => void;
   openComments: Set<string>; toggleComments: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
-  updateRemark: (commentId: string, text: string) => void;
+  updateRemark: (commentId: string, patch: { text?: string; flagged?: boolean }) => void;
   deleteRemark: (commentId: string) => void;
   toggleMilestone: (t: PlanTask) => void; deleteTask: (id: string) => void; patchTask: (id: string, v: Partial<PlanTask>) => void; patchStage: (id: string, v: Partial<Stage>) => void;
   addStage: (name: string) => void; deleteStage: (id: string) => void;
@@ -1063,7 +1065,7 @@ function TaskTree(props: {
   openTasks: Set<string>; toggleOpen: (id: string) => void; expandAllTasks: () => void; collapseAllTasks: () => void;
   openComments: Set<string>; toggleComments: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
-  updateRemark: (commentId: string, text: string) => void;
+  updateRemark: (commentId: string, patch: { text?: string; flagged?: boolean }) => void;
   deleteRemark: (commentId: string) => void;
   toggleMilestone: (t: PlanTask) => void; deleteTask: (id: string) => void; patchTask: (id: string, v: Partial<PlanTask>) => void; patchStage: (id: string, v: Partial<Stage>) => void;
   addStage: (name: string) => void; deleteStage: (id: string) => void;
@@ -1179,7 +1181,7 @@ function GanttView({ stages, tasks, openTasks, toggleOpen, comments, patchTask, 
   deleteTask: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void;
   attachPhoto: (id: string) => void;
-  updateRemark: (commentId: string, text: string) => void;
+  updateRemark: (commentId: string, patch: { text?: string; flagged?: boolean }) => void;
   deleteRemark: (commentId: string) => void;
 }) {
   const [focusMode, setFocusMode] = useState(false);
@@ -1573,7 +1575,7 @@ function MainTaskRow({
   openTasks: Set<string>; toggleOpen: (id: string) => void;
   openComments: Set<string>; toggleComments: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
-  updateRemark: (commentId: string, text: string) => void;
+  updateRemark: (commentId: string, patch: { text?: string; flagged?: boolean }) => void;
   deleteRemark: (commentId: string) => void;
   toggleMilestone: (t: PlanTask) => void; deleteTask: (id: string) => void; patchTask: (id: string, v: Partial<PlanTask>) => void;
   setAddingTaskFor: (v: { stageId: string; parentId: string | null } | null) => void; stageId: string;
@@ -1642,7 +1644,7 @@ function SubTaskRow({
 }: {
   task: PlanTask; comments: Comment[]; today: number; openComments: Set<string>; toggleComments: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
-  updateRemark: (commentId: string, text: string) => void;
+  updateRemark: (commentId: string, patch: { text?: string; flagged?: boolean }) => void;
   deleteRemark: (commentId: string) => void;
   deleteTask: (id: string) => void; patchTask: (id: string, v: Partial<PlanTask>) => void;
 } & DragCtl) {
@@ -1687,7 +1689,7 @@ function DateCell({ value, onChange, accent, small }: { value: string | null; on
 function CommentBox({ taskId, comments, submitRemark, updateRemark, deleteRemark, attachPhoto, indent }: {
   taskId: string; comments: Comment[];
   submitRemark: (taskId: string, text: string) => void;
-  updateRemark: (commentId: string, text: string) => void;
+  updateRemark: (commentId: string, patch: { text?: string; flagged?: boolean }) => void;
   deleteRemark: (commentId: string) => void;
   attachPhoto: () => void;
   indent: number;
@@ -1697,15 +1699,17 @@ function CommentBox({ taskId, comments, submitRemark, updateRemark, deleteRemark
   const [editingText, setEditingText] = useState("");
   const submit = () => { if (draft.trim()) { submitRemark(taskId, draft); setDraft(""); } };
   const saveEdit = (commentId: string) => {
-    if (editingText.trim()) updateRemark(commentId, editingText.trim());
+    if (editingText.trim()) updateRemark(commentId, { text: editingText.trim() });
     setEditingId(null); setEditingText("");
   };
   return (
     <div className="bg-amber-50 border-b border-amber-100" style={{ paddingLeft: indent, paddingRight: 10 }}>
       <div className="border border-amber-200 rounded-lg overflow-hidden bg-white my-1.5">
         {comments.map(c => (
-          <div key={c.id} className="px-3 py-2 border-b border-amber-50 last:border-none">
+          <div key={c.id} className={`px-3 py-2 border-b last:border-none ${c.flagged ? "bg-amber-50 border-amber-100" : "bg-white border-amber-50"}`}>
             <div className="flex items-center gap-2 mb-0.5">
+              <input type="checkbox" checked={c.flagged} onChange={e => updateRemark(c.id, { flagged: e.target.checked })}
+                title="Mark for discussion" className="w-3.5 h-3.5 accent-amber-500 cursor-pointer flex-shrink-0" />
               <span className="text-xs text-amber-500">{new Date(c.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" })}</span>
               {editingId !== c.id && (
                 <>
@@ -1753,7 +1757,7 @@ function TaskDetailModal({ task, comments, onClose, patchTask, toggleMilestone, 
   deleteTask: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void;
   attachPhoto: (id: string) => void;
-  updateRemark: (commentId: string, text: string) => void;
+  updateRemark: (commentId: string, patch: { text?: string; flagged?: boolean }) => void;
   deleteRemark: (commentId: string) => void;
 }) {
   const taskComments = comments.filter(c => c.taskId === task.id);

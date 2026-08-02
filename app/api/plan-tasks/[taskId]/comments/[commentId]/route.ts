@@ -8,9 +8,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ co
   const session = getSessionFromRequest(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { commentId } = await params;
-  const { text } = await req.json().catch(() => ({}));
-  if (!text?.trim()) return NextResponse.json({ error: "Empty text" }, { status: 400 });
-  const [updated] = await db.update(taskComments).set({ text: text.trim() }).where(eq(taskComments.id, commentId)).returning();
+  const body = await req.json().catch(() => ({}));
+  const patch: Record<string, unknown> = {};
+  if (body.text !== undefined) {
+    if (!body.text?.trim()) return NextResponse.json({ error: "Empty text" }, { status: 400 });
+    patch.text = body.text.trim();
+  }
+  if (body.flagged !== undefined) patch.flagged = Boolean(body.flagged);
+  if (Object.keys(patch).length === 0) return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  const [updated] = await db.update(taskComments).set(patch).where(eq(taskComments.id, commentId)).returning();
   return NextResponse.json(updated);
 }
 
