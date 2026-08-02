@@ -440,9 +440,14 @@ export default function ProjectDetailPage() {
   const toggleMilestone = (task: PlanTask) => patchTask(task.id, { isMilestone: !task.isMilestone });
   const toggleOpen = (taskId: string) => setOpenTasks(prev => { const s = new Set(prev); s.has(taskId) ? s.delete(taskId) : s.add(taskId); return s; });
   const toggleComments = (taskId: string) => setOpenComments(prev => { const s = new Set(prev); s.has(taskId) ? s.delete(taskId) : s.add(taskId); return s; });
-  const closeAllComments = () => setOpenComments(new Set());
-  const expandAllTasks = () => setOpenTasks(new Set([...stages.map(s => s.id), ...tasks.filter(t => !t.parentId).map(t => t.id)]));
-  const collapseAllTasks = () => setOpenTasks(new Set());
+  const expandAllTasks = () => {
+    setOpenTasks(new Set([...stages.map(s => s.id), ...tasks.filter(t => !t.parentId).map(t => t.id)]));
+    setOpenComments(new Set(tasks.map(t => t.id)));
+  };
+  const collapseAllTasks = () => {
+    setOpenTasks(new Set());
+    setOpenComments(new Set());
+  };
 
   // ── Press-and-hold drag to reorder/move stages, main tasks, and sub tasks ──
   const startDrag = (kind: "stage" | "task", id: string) => setDragging({ kind, id });
@@ -647,7 +652,7 @@ export default function ProjectDetailPage() {
             <PlanTab
               stages={stages} tasks={tasks} comments={comments}
               openTasks={openTasks} toggleOpen={toggleOpen} expandAllTasks={expandAllTasks} collapseAllTasks={collapseAllTasks}
-              openComments={openComments} toggleComments={toggleComments} closeAllComments={closeAllComments}
+              openComments={openComments} toggleComments={toggleComments}
               submitRemark={submitRemark} attachPhoto={attachPhoto}
               updateRemark={updateRemark} deleteRemark={deleteRemark}
               toggleMilestone={toggleMilestone} deleteTask={deleteTask} patchTask={patchTask} patchStage={patchStage}
@@ -1026,7 +1031,7 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
 function PlanTab(props: {
   stages: Stage[]; tasks: PlanTask[]; comments: Comment[];
   openTasks: Set<string>; toggleOpen: (id: string) => void; expandAllTasks: () => void; collapseAllTasks: () => void;
-  openComments: Set<string>; toggleComments: (id: string) => void; closeAllComments: () => void;
+  openComments: Set<string>; toggleComments: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
   updateRemark: (commentId: string, text: string) => void;
   deleteRemark: (commentId: string) => void;
@@ -1056,7 +1061,7 @@ function PlanTab(props: {
 function TaskTree(props: {
   stages: Stage[]; tasks: PlanTask[]; comments: Comment[];
   openTasks: Set<string>; toggleOpen: (id: string) => void; expandAllTasks: () => void; collapseAllTasks: () => void;
-  openComments: Set<string>; toggleComments: (id: string) => void; closeAllComments: () => void;
+  openComments: Set<string>; toggleComments: (id: string) => void;
   submitRemark: (taskId: string, text: string) => void; attachPhoto: (id: string) => void;
   updateRemark: (commentId: string, text: string) => void;
   deleteRemark: (commentId: string) => void;
@@ -1068,7 +1073,7 @@ function TaskTree(props: {
 } & DragCtl) {
   const {
     stages, tasks, comments, openTasks, toggleOpen, expandAllTasks, collapseAllTasks,
-    openComments, toggleComments, closeAllComments, submitRemark, attachPhoto, updateRemark, deleteRemark,
+    openComments, toggleComments, submitRemark, attachPhoto, updateRemark, deleteRemark,
     toggleMilestone, deleteTask, patchTask, patchStage, addStage, deleteStage,
     addingTaskFor, setAddingTaskFor, addTask, taskView, setTaskView,
     dragging, hoverId, startDrag,
@@ -1086,7 +1091,6 @@ function TaskTree(props: {
           </div>
           <button onClick={expandAllTasks} className="text-sm text-blue-600 hover:underline">Expand all</button>
           <button onClick={collapseAllTasks} className="text-sm text-blue-600 hover:underline">Collapse all</button>
-          <button onClick={closeAllComments} className="text-sm text-blue-600 hover:underline">Close remarks</button>
         </div>
       </div>
 
