@@ -381,6 +381,8 @@ export default function ProjectDetailPage() {
         body: JSON.stringify({ name: file.name, url: blob.url, pathname: blob.pathname }),
       });
       loadBackground();
+    } catch (err) {
+      showToast(`Upload failed: ${(err as Error).message}`);
     } finally {
       setUploadingFile(false);
     }
@@ -582,15 +584,19 @@ export default function ProjectDetailPage() {
     const taskId = pendingPhotoTaskId;
     setPendingPhotoTaskId(null);
     if (!taskId) return;
-    const blob = await upload(file.name, file, { access: "private", handleUploadUrl: "/api/blob/upload" });
-    const tempId = `temp-${Date.now()}`;
-    setComments(prev => [...prev, { id: tempId, taskId, authorName: "You", text: null, imageUrl: blob.url, imagePathname: blob.pathname, flagged: false, createdAt: new Date().toISOString() }]);
-    const res = await fetch(`/api/plan-tasks/${taskId}/comments`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageUrl: blob.url, imagePathname: blob.pathname, text: null }),
-    });
-    const comment = await res.json();
-    setComments(prev => prev.map(c => c.id === tempId ? comment : c));
+    try {
+      const blob = await upload(file.name, file, { access: "private", handleUploadUrl: "/api/blob/upload" });
+      const tempId = `temp-${Date.now()}`;
+      setComments(prev => [...prev, { id: tempId, taskId, authorName: "You", text: null, imageUrl: blob.url, imagePathname: blob.pathname, flagged: false, createdAt: new Date().toISOString() }]);
+      const res = await fetch(`/api/plan-tasks/${taskId}/comments`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: blob.url, imagePathname: blob.pathname, text: null }),
+      });
+      const comment = await res.json();
+      setComments(prev => prev.map(c => c.id === tempId ? comment : c));
+    } catch (err) {
+      showToast(`Photo upload failed: ${(err as Error).message}`);
+    }
   };
 
   // ── Export/import ──

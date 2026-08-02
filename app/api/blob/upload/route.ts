@@ -20,6 +20,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         access: "private",
         addRandomSuffix: true,
         tokenPayload: JSON.stringify({ userId: session.id }),
+        // handleUpload() normally derives this from Vercel's system env vars
+        // (VERCEL_URL etc.), which don't exist under plain `next dev` -- it
+        // throws "Unable to determine callback URL" without this. Deriving
+        // it from the incoming request works in both local dev and deployed.
+        callbackUrl: new URL("/api/blob/upload", req.url).toString(),
       }),
       onUploadCompleted: async () => {
         // No-op: the client persists file metadata to Postgres itself right
