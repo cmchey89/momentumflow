@@ -442,7 +442,7 @@ export default function ProjectDetailPage() {
   const toggleComments = (taskId: string) => setOpenComments(prev => { const s = new Set(prev); s.has(taskId) ? s.delete(taskId) : s.add(taskId); return s; });
   const expandAllTasks = () => {
     setOpenTasks(new Set([...stages.map(s => s.id), ...tasks.filter(t => !t.parentId).map(t => t.id)]));
-    setOpenComments(new Set(tasks.map(t => t.id)));
+    setOpenComments(new Set(comments.map(c => c.taskId)));
   };
   const collapseAllTasks = () => {
     setOpenTasks(new Set());
