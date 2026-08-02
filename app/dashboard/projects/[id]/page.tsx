@@ -225,6 +225,23 @@ const TAB_LABELS: Record<"background" | "plan" | "finance", string> = {
 function fmtMoney(n: number) { return `$${n.toLocaleString()}`; }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "—"; }
 
+// Alt+Enter doesn't insert a newline in a textarea by default on Windows/Chrome
+// (Alt is treated as an accelerator key), unlike Shift+Enter which does natively.
+// Splice the newline in manually and restore the cursor + auto-grow height.
+function insertNewlineAtCursor(e: React.KeyboardEvent<HTMLTextAreaElement>, value: string, setValue: (v: string) => void) {
+  e.preventDefault();
+  const el = e.currentTarget;
+  const start = el.selectionStart ?? value.length;
+  const end = el.selectionEnd ?? value.length;
+  const next = value.slice(0, start) + "\n" + value.slice(end);
+  setValue(next);
+  requestAnimationFrame(() => {
+    el.selectionStart = el.selectionEnd = start + 1;
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + "px";
+  });
+}
+
 // Shown only on a genuinely cold visit (nothing cached yet) so the page never
 // flashes blank while the initial project/background/stages fetch resolves.
 function TabSkeleton() {
@@ -974,7 +991,7 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
             {editMode && editingId === c.id ? (
               <div className="flex items-start gap-1.5" style={{ width: "50%" }}>
                 <textarea autoFocus value={editingText} onChange={e => setEditingText(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); saveEdit(c.id); } if (e.key === "Escape") setEditingId(null); }}
+                  onKeyDown={e => { if (e.key === "Enter" && e.altKey) { insertNewlineAtCursor(e, editingText, setEditingText); return; } if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(c.id); } if (e.key === "Escape") setEditingId(null); }}
                   rows={1}
                   onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
                   className="flex-1 min-w-0 text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-sky-300 focus:outline-none resize-none overflow-hidden" />
@@ -989,7 +1006,7 @@ function TaskNotes({ taskId, comments, submitRemark, updateRemark, deleteRemark,
         {editMode && (
           <div className="flex items-start gap-1.5" style={{ width: "50%" }}>
             <textarea value={draft} onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); submit(); } }}
+              onKeyDown={e => { if (e.key === "Enter" && e.altKey) { insertNewlineAtCursor(e, draft, setDraft); return; } if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
               onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
               placeholder="Add update or blocker…"
               rows={1}
@@ -1696,7 +1713,7 @@ function CommentBox({ taskId, comments, submitRemark, updateRemark, deleteRemark
             {editingId === c.id ? (
               <div className="flex items-start gap-1.5">
                 <textarea autoFocus value={editingText} onChange={e => setEditingText(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); saveEdit(c.id); } if (e.key === "Escape") setEditingId(null); }}
+                  onKeyDown={e => { if (e.key === "Enter" && e.altKey) { insertNewlineAtCursor(e, editingText, setEditingText); return; } if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); saveEdit(c.id); } if (e.key === "Escape") setEditingId(null); }}
                   rows={1}
                   onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
                   className="flex-1 min-w-0 text-sm border border-amber-200 rounded-lg px-2.5 py-1.5 bg-white focus:border-amber-400 focus:outline-none resize-none overflow-hidden" />
@@ -1713,7 +1730,7 @@ function CommentBox({ taskId, comments, submitRemark, updateRemark, deleteRemark
         ))}
         <div className="flex items-end gap-2 px-2.5 py-2 bg-amber-50/60">
           <textarea value={draft} onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); submit(); } }}
+            onKeyDown={e => { if (e.key === "Enter" && e.altKey) { insertNewlineAtCursor(e, draft, setDraft); return; } if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
             onInput={(e) => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
             rows={1} placeholder="Add remark…"
             className="flex-1 text-sm border border-amber-200 rounded-lg px-3 py-2 bg-white focus:border-amber-400 focus:outline-none resize-none overflow-hidden" />
