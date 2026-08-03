@@ -1737,6 +1737,7 @@ function CommentBox({ taskId, comments, submitRemark, updateRemark, deleteRemark
   const [draft, setDraft] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const submit = () => { if (draft.trim()) { submitRemark(taskId, draft); setDraft(""); } };
   const saveEdit = (commentId: string) => {
     if (editingText.trim()) updateRemark(commentId, { text: editingText.trim() });
@@ -1772,8 +1773,8 @@ function CommentBox({ taskId, comments, submitRemark, updateRemark, deleteRemark
               <>
                 {c.text && <p className="text-sm text-gray-700 mt-0.5">{c.text}</p>}
                 {c.imageUrl && (
-                  <a href={c.imagePathname ? blobDownloadHref(c.imagePathname, "photo") : c.imageUrl} target="_blank"
-                    className="text-sm text-amber-600 flex items-center gap-1 mt-1"><FileText className="w-3.5 h-3.5" /> Photo attached</a>
+                  <button onClick={() => setPreviewSrc(c.imagePathname ? blobDownloadHref(c.imagePathname, "photo") : c.imageUrl)}
+                    className="text-sm text-amber-600 flex items-center gap-1 mt-1"><FileText className="w-3.5 h-3.5" /> Photo attached</button>
                 )}
               </>
             )}
@@ -1789,6 +1790,7 @@ function CommentBox({ taskId, comments, submitRemark, updateRemark, deleteRemark
           <button onClick={attachPhoto} className="w-8 h-8 border border-amber-200 rounded-lg flex items-center justify-center text-amber-400 flex-shrink-0"><Upload className="w-4 h-4" /></button>
         </div>
       </div>
+      {previewSrc && <ImageLightbox src={previewSrc} onClose={() => setPreviewSrc(null)} />}
     </div>
   );
 }
@@ -2623,6 +2625,23 @@ function AddPaymentForm({ onSave }: { onSave: (b: Record<string, unknown>) => vo
       <button onClick={() => { if (amount) onSave({ amount, paymentDate: paymentDate || null, invoiceRef: invoiceRef || null, notes: notes || null }); }}
         className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg w-full">Record Payment</button>
     </>
+  );
+}
+
+function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-4 right-4 text-white/80 hover:text-white">
+        <X className="w-6 h-6" />
+      </button>
+      <img src={src} alt="Attached photo" onClick={e => e.stopPropagation()}
+        className="max-w-full max-h-full rounded-lg shadow-2xl object-contain" />
+    </div>
   );
 }
 
