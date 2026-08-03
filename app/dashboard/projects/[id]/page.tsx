@@ -1935,7 +1935,7 @@ function FinanceTab({ projectId }: {
   const totalPoValue = conPos.reduce((s, p) => s + Number(p.poValue), 0);
   const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
   const totalAllocatedBudget = contractors.reduce((s, c) => s + Number(c.allocatedBudget ?? 0), 0);
-  const grossProfit = totalWoValue - totalPoValue;
+  const grossProfit = totalWoValue - totalPaid;
 
   const paymentsByPoId: Record<string, PoPayment[]> = {};
   for (const pay of payments) {
