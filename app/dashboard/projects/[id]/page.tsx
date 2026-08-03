@@ -824,7 +824,7 @@ function BackgroundTab(props: {
     const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
     const totalAllocatedBudget = contractorsList.reduce((s, c) => s + Number(c.allocatedBudget ?? 0), 0);
     const claimedToDate = (finance?.woClaims ?? []).reduce((s, c) => s + Number(c.amount), 0);
-    const grossProfit = totalWoValue - totalPoValue;
+    const grossProfit = totalWoValue - totalPaid;
     return { totalWoValue, totalPoValue, totalPaid, totalAllocatedBudget, claimedToDate, grossProfit };
   })();
 
