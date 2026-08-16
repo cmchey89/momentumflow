@@ -13,6 +13,29 @@ export const users = pgTable("users", {
 export const taskStatusEnum = pgEnum("task_status", ["todo", "in_progress", "done"]);
 export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high"]);
 export const memberRoleEnum = pgEnum("member_role", ["owner", "manager", "member"]);
+
+// Standalone personal to-dos shown on the My Tasks Kanban board alongside
+// project-assigned `tasks` rows -- not tied to any project.
+export const personalTasks = pgTable("personal_tasks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id").notNull(),
+  title: text("title").notNull(),
+  notes: text("notes"),
+  status: taskStatusEnum("status").default("todo").notNull(),
+  priority: taskPriorityEnum("priority").default("medium").notNull(),
+  dueDate: date("due_date"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const personalTaskAttachments = pgTable("personal_task_attachments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  taskId: uuid("task_id").references(() => personalTasks.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  url: text("url").notNull(),
+  pathname: text("pathname"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 export const teamEnum = pgEnum("team", ["network", "osp", "finance", "management"]);
 export const handoffStatusEnum = pgEnum("handoff_status", ["active", "pending", "returned"]);
 export const handoffRecordStatusEnum = pgEnum("handoff_record_status", ["pending", "resolved", "returned"]);
