@@ -29,19 +29,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   if (!parsed) return NextResponse.json({ error: "No template structure provided" }, { status: 400 });
 
+  // startDate === null means the user chose "No dates" -- skip all date
+  // math and import bare structure only, to be scheduled later.
+  const useDates = startDate !== null;
   const existingStages = await db.select().from(projectStages).where(eq(projectStages.projectId, id));
-  let cursor = startDate || new Date().toISOString().slice(0, 10);
+  let cursor = useDates ? (startDate || new Date().toISOString().slice(0, 10)) : "";
   let sortOrder = existingStages.length;
   let stagesCreated = 0, mainCreated = 0, subCreated = 0;
 
   for (const stage of parsed.stages) {
     const stageStart = cursor;
     const stageDur = stage.durationDays ?? stage.tasks.reduce((sum, t) => sum + (t.durationDays ?? 1), 0);
-    const stageEnd = addDays(stageStart, Math.max(stageDur, 1));
+    const stageEnd = useDates ? addDays(stageStart, Math.max(stageDur, 1)) : "";
 
     const [createdStage] = await db.insert(projectStages).values({
       projectId: id, name: stage.name, sortOrder: sortOrder++,
-      planStart: stageStart, planEnd: stageEnd,
+      planStart: useDates ? stageStart : null, planEnd: useDates ? stageEnd : null,
     }).returning();
     stagesCreated++;
 
@@ -50,12 +53,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     for (const task of stage.tasks) {
       const taskDur = task.durationDays ?? 1;
       const taskStart = taskCursor;
-      const taskEnd = addDays(taskStart, taskDur);
+      const taskEnd = useDates ? addDays(taskStart, taskDur) : "";
 
       const [createdTask] = await db.insert(planTasks).values({
         stageId: createdStage.id, parentId: null,
         title: task.title, isMilestone: !!task.isMilestone, sortOrder: taskSort++,
-        planStart: taskStart, planEnd: taskEnd,
+        planStart: useDates ? taskStart : null, planEnd: useDates ? taskEnd : null,
       }).returning();
       mainCreated++;
 
@@ -64,11 +67,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       for (const sub of task.subTasks) {
         const subDur = sub.durationDays ?? 1;
         const subStart = subCursor;
-        const subEnd = addDays(subStart, subDur);
+        const subEnd = useDates ? addDays(subStart, subDur) : "";
         await db.insert(planTasks).values({
           stageId: createdStage.id, parentId: createdTask.id,
           title: sub.title, isMilestone: false, sortOrder: subSort++,
-          planStart: subStart, planEnd: subEnd,
+          planStart: useDates ? subStart : null, planEnd: useDates ? subEnd : null,
         });
         subCreated++;
         subCursor = subEnd;

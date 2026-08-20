@@ -334,7 +334,7 @@ export default function ProjectDetailPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [importStep, setImportStep] = useState(1);
   const [selectedTpl, setSelectedTpl] = useState<Template | null>(null);
-  const [importStartDate, setImportStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [importStartDate, setImportStartDate] = useState<string | null>(new Date().toISOString().slice(0, 10));
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -2756,7 +2756,7 @@ function BulkImportModal({ onClose, onImport }: { onClose: () => void; onImport:
 function ImportModal({ templates, step, setStep, selected, setSelected, startDate, setStartDate, onClose, onImport }: {
   templates: Template[]; step: number; setStep: (n: number) => void;
   selected: Template | null; setSelected: (t: Template | null) => void;
-  startDate: string; setStartDate: (s: string) => void; onClose: () => void; onImport: () => void;
+  startDate: string | null; setStartDate: (s: string | null) => void; onClose: () => void; onImport: () => void;
 }) {
   const structure = selected ? JSON.parse(selected.structure) as { stages: { name: string; tasks: { title: string; isMilestone?: boolean; subTasks: { title: string }[] }[] }[] } : null;
   return (
@@ -2799,8 +2799,19 @@ function ImportModal({ templates, step, setStep, selected, setSelected, startDat
       )}
       {step === 3 && (
         <>
-          <p className="text-sm text-gray-400 mb-2">Set the project start date. End dates calculate from durations, editable after import.</p>
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-4" />
+          <p className="text-sm text-gray-400 mb-2">
+            {startDate === null
+              ? "Structure will be imported without dates — set the schedule later."
+              : "Set the project start date. End dates calculate from durations, editable after import."}
+          </p>
+          <input type="date" value={startDate ?? ""} disabled={startDate === null}
+            onChange={e => setStartDate(e.target.value)}
+            className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 mb-2 disabled:bg-gray-50 disabled:text-gray-400" />
+          <label className="flex items-center gap-2 text-sm text-gray-600 mb-4 cursor-pointer">
+            <input type="checkbox" checked={startDate === null}
+              onChange={e => setStartDate(e.target.checked ? null : new Date().toISOString().slice(0, 10))} />
+            No dates — I'll set the schedule later
+          </label>
           <div className="flex gap-2">
             <button onClick={() => setStep(2)} className="border border-gray-300 text-sm px-3 py-1.5 rounded-lg">Back</button>
             <button onClick={onImport} className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg flex items-center gap-1"><Upload className="w-3.5 h-3.5" /> Import into project</button>
