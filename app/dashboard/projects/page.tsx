@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-import { Plus, FolderKanban, Trash2 } from "lucide-react";
+import { Plus, FolderKanban, Trash2, GripVertical } from "lucide-react";
 import Link from "next/link";
 
 interface Project {
@@ -17,9 +17,31 @@ export default function ProjectsPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const load = () => fetch("/api/projects").then(r => r.json()).then(setProjects);
   useEffect(() => { load(); }, []);
+
+  const reorder = async (orderedIds: string[]) => {
+    await fetch("/api/projects", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderedIds }),
+    });
+  };
+  const handleDrop = (targetId: string) => {
+    setDragOverId(null);
+    if (!draggedId || draggedId === targetId) { setDraggedId(null); return; }
+    const current = [...projects];
+    const fromIdx = current.findIndex(p => p.id === draggedId);
+    const toIdx = current.findIndex(p => p.id === targetId);
+    setDraggedId(null);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = current.splice(fromIdx, 1);
+    current.splice(toIdx, 0, moved);
+    setProjects(current);
+    reorder(current.map(p => p.id));
+  };
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,11 +113,23 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map(p => (
-            <div key={p.id} className="bg-white border border-gray-200 rounded-xl p-6 hover:border-blue-300 hover:shadow-sm transition-all">
+            <div key={p.id}
+              draggable
+              onDragStart={() => setDraggedId(p.id)}
+              onDragOver={e => { e.preventDefault(); if (dragOverId !== p.id) setDragOverId(p.id); }}
+              onDragLeave={() => setDragOverId(prev => (prev === p.id ? null : prev))}
+              onDrop={e => { e.preventDefault(); handleDrop(p.id); }}
+              onDragEnd={() => { setDraggedId(null); setDragOverId(null); }}
+              className={`bg-white border rounded-xl p-6 hover:border-blue-300 hover:shadow-sm transition-all ${dragOverId === p.id && draggedId !== p.id ? "border-t-4 border-t-blue-400 border-gray-200" : "border-gray-200"} ${draggedId === p.id ? "opacity-40" : ""}`}>
               <div className="flex items-start justify-between">
                 <Link href={`/dashboard/projects/${p.id}`} className="flex-1">
-                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mb-3">
-                    <FolderKanban className="w-4 h-4 text-blue-600" />
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <span className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500" onClick={e => e.preventDefault()}>
+                      <GripVertical className="w-4 h-4" />
+                    </span>
+                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <FolderKanban className="w-4 h-4 text-blue-600" />
+                    </div>
                   </div>
                   <h3 className="font-semibold text-gray-900">{p.name}</h3>
                   {p.description && <p className="text-sm text-gray-500 mt-1 line-clamp-2">{p.description}</p>}
