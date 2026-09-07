@@ -651,6 +651,9 @@ export default function ProjectDetailPage() {
           <button onClick={openImport} className="flex items-center gap-1.5 border border-gray-300 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50">
             <Upload className="w-3.5 h-3.5" /> Import template
           </button>
+          <a href={`/api/projects/${id}/export-excel`} className="flex items-center gap-1.5 border border-gray-300 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50">
+            <Download className="w-3.5 h-3.5" /> Export plan (Excel)
+          </a>
           <button onClick={() => setShowExport(true)} className="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700">
             <Download className="w-3.5 h-3.5" /> Export as template
           </button>

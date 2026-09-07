@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-import { Plus, FolderKanban, Trash2, GripVertical, Eye, EyeOff } from "lucide-react";
+import { Plus, FolderKanban, Trash2, GripVertical, Eye, EyeOff, Download } from "lucide-react";
 import Link from "next/link";
 
 interface Project {
@@ -82,6 +82,11 @@ export default function ProjectsPage() {
           <p className="text-gray-500 mt-1">Manage your team projects</p>
         </div>
         <div className="flex items-center gap-3">
+          {visibleProjects.length > 0 && (
+            <a href="/api/projects/export-excel-all" className="flex items-center gap-1.5 text-sm border border-gray-300 px-3 py-2 rounded-lg font-medium hover:bg-gray-50">
+              <Download className="w-4 h-4" /> Export all (Excel)
+            </a>
+          )}
           {hiddenProjects.length > 0 && (
             <button onClick={() => setShowHidden(v => !v)}
               className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
