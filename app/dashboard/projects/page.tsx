@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-import { Plus, FolderKanban, Trash2, GripVertical } from "lucide-react";
+import { Plus, FolderKanban, Trash2, GripVertical, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 
 interface Project {
@@ -9,6 +9,7 @@ interface Project {
   name: string;
   description: string | null;
   createdAt: string;
+  hidden: boolean;
 }
 
 export default function ProjectsPage() {
@@ -19,9 +20,21 @@ export default function ProjectsPage() {
   const [loading, setLoading] = useState(false);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
 
   const load = () => fetch("/api/projects").then(r => r.json()).then(setProjects);
   useEffect(() => { load(); }, []);
+
+  const setHidden = async (id: string, hidden: boolean) => {
+    setProjects(prev => prev.map(p => p.id === id ? { ...p, hidden } : p));
+    await fetch(`/api/projects/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hidden }),
+    });
+  };
+
+  const visibleProjects = projects.filter(p => !p.hidden);
+  const hiddenProjects = projects.filter(p => p.hidden);
 
   const reorder = async (orderedIds: string[]) => {
     await fetch("/api/projects", {
@@ -68,12 +81,21 @@ export default function ProjectsPage() {
           <h2 className="text-2xl font-bold text-gray-900">Projects</h2>
           <p className="text-gray-500 mt-1">Manage your team projects</p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-        >
-          <Plus className="w-4 h-4" /> New Project
-        </button>
+        <div className="flex items-center gap-3">
+          {hiddenProjects.length > 0 && (
+            <button onClick={() => setShowHidden(v => !v)}
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700">
+              {showHidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {showHidden ? "Hide" : "Show"} hidden ({hiddenProjects.length})
+            </button>
+          )}
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" /> New Project
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -105,14 +127,14 @@ export default function ProjectsPage() {
         </form>
       )}
 
-      {projects.length === 0 ? (
+      {visibleProjects.length === 0 && hiddenProjects.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <FolderKanban className="w-12 h-12 mx-auto mb-3 opacity-30" />
           <p>No projects yet. Create one to get started.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {projects.map(p => (
+          {visibleProjects.map(p => (
             <div key={p.id}
               draggable
               onDragStart={() => setDraggedId(p.id)}
@@ -134,13 +156,48 @@ export default function ProjectsPage() {
                   <h3 className="font-semibold text-gray-900">{p.name}</h3>
                   {p.description && <p className="text-sm text-gray-500 mt-1 line-clamp-2">{p.description}</p>}
                 </Link>
-                <button onClick={() => remove(p.id)} className="text-gray-400 hover:text-red-500 transition-colors ml-2">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1 ml-2">
+                  <button onClick={() => setHidden(p.id, true)} title="Hide project" className="text-gray-400 hover:text-gray-600 transition-colors">
+                    <EyeOff className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => remove(p.id)} className="text-gray-400 hover:text-red-500 transition-colors">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               <p className="text-xs text-gray-400 mt-4">{new Date(p.createdAt).toLocaleDateString()}</p>
             </div>
           ))}
+        </div>
+      )}
+
+      {showHidden && hiddenProjects.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Hidden projects</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {hiddenProjects.map(p => (
+              <div key={p.id} className="bg-gray-50 border border-gray-200 rounded-xl p-6 opacity-70">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="w-8 h-8 bg-gray-200 rounded-lg flex items-center justify-center mb-3">
+                      <FolderKanban className="w-4 h-4 text-gray-400" />
+                    </div>
+                    <h3 className="font-semibold text-gray-600">{p.name}</h3>
+                    {p.description && <p className="text-sm text-gray-400 mt-1 line-clamp-2">{p.description}</p>}
+                  </div>
+                  <div className="flex items-center gap-1 ml-2">
+                    <button onClick={() => setHidden(p.id, false)} title="Unhide project" className="text-gray-400 hover:text-blue-600 transition-colors">
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => remove(p.id)} className="text-gray-400 hover:text-red-500 transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 mt-4">{new Date(p.createdAt).toLocaleDateString()}</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

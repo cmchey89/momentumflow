@@ -46,6 +46,7 @@ export const projects = pgTable("projects", {
   description: text("description"),
   createdBy: text("created_by").notNull(),
   sortOrder: integer("sort_order").default(0).notNull(),
+  hidden: boolean("hidden").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
