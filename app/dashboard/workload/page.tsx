@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Users, AlertCircle, Upload, Download, Trash2, X, CheckSquare, Square } from "lucide-react";
+import { Users, AlertCircle, Upload, Download, Trash2, X, CheckSquare, Square, Loader2 } from "lucide-react";
 import { upload } from "@vercel/blob/client";
 
 interface MemberLoad {
@@ -25,6 +25,7 @@ export default function WorkloadPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [downloading, setDownloading] = useState(false);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
 
   const loadPhotos = () => fetch("/api/workload-photos").then(r => r.json()).then(setPhotos);
@@ -61,16 +62,24 @@ export default function WorkloadPage() {
   const clearSelection = () => setSelected(new Set());
 
   const downloadSelected = async () => {
-    const ids = [...selected];
-    const res = await fetch("/api/workload-photos/download-zip", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
-    });
-    const blob = await res.blob();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "workload-photos.zip";
-    a.click();
-    URL.revokeObjectURL(a.href);
+    setDownloading(true);
+    try {
+      const ids = [...selected];
+      const res = await fetch("/api/workload-photos/download-zip", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) throw new Error("Download failed");
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "workload-photos.zip";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch {
+      alert("Download failed. Please try again.");
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const deleteSelected = async () => {
@@ -157,8 +166,10 @@ export default function WorkloadPage() {
             {selected.size > 0 && (
               <>
                 <span className="text-sm text-gray-500">{selected.size} selected</span>
-                <button onClick={downloadSelected} className="flex items-center gap-1.5 border border-gray-300 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50">
-                  <Download className="w-3.5 h-3.5" /> Download
+                <button onClick={downloadSelected} disabled={downloading}
+                  className="flex items-center gap-1.5 border border-gray-300 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50 active:scale-95 active:bg-gray-100 transition-transform disabled:opacity-70 disabled:cursor-wait disabled:active:scale-100">
+                  {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                  {downloading ? "Preparing download…" : "Download"}
                 </button>
                 <button onClick={deleteSelected} className="flex items-center gap-1.5 border border-red-200 text-red-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-red-50">
                   <Trash2 className="w-3.5 h-3.5" /> Delete
