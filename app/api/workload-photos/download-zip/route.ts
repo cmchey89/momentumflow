@@ -6,6 +6,25 @@ import { db } from "../../../../lib/db/client";
 import { workloadPhotos } from "../../../../lib/db/schema";
 import { inArray } from "drizzle-orm";
 
+// Bridges JSZip's Node-stream-style internal stream to a Web ReadableStream,
+// so the whole archive is never buffered into memory before responding --
+// necessary for real, uncompressed multi-MB photos, which a fully-buffered
+// response can silently truncate/exceed platform response-size limits on.
+function zipToWebStream(zip: JSZip): ReadableStream<Uint8Array> {
+  const internal = zip.generateInternalStream({ type: "uint8array", streamFiles: true });
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      internal.on("data", (chunk: Uint8Array) => controller.enqueue(chunk));
+      internal.on("error", (err: Error) => controller.error(err));
+      internal.on("end", () => controller.close());
+      internal.resume();
+    },
+    cancel() {
+      internal.pause();
+    },
+  });
+}
+
 export async function POST(req: NextRequest) {
   const session = getSessionFromRequest(req);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -18,9 +37,6 @@ export async function POST(req: NextRequest) {
   const usedNames = new Set<string>();
   for (const photo of photos) {
     if (!photo.pathname) continue; // legacy/external-url rows have nothing we can fetch server-side
-    const result = await get(photo.pathname, { access: "private", token: process.env.BLOB_READ_WRITE_TOKEN || undefined });
-    if (result?.statusCode !== 200 || !result.stream) continue;
-    const bytes = await new Response(result.stream).arrayBuffer();
 
     let name = photo.name;
     if (usedNames.has(name)) {
@@ -30,11 +46,20 @@ export async function POST(req: NextRequest) {
       name = `${base} (${photo.id.slice(0, 8)})${ext}`;
     }
     usedNames.add(name);
-    zip.file(name, bytes); // raw bytes, no re-encoding -- original quality preserved
+
+    // Pass a promise, not the bytes -- JSZip fetches each file lazily as the
+    // stream reaches it, instead of every photo being pulled into memory at
+    // once up front. Raw bytes throughout, no re-encoding: original quality
+    // preserved.
+    const pathname = photo.pathname;
+    zip.file(name, (async () => {
+      const result = await get(pathname, { access: "private", token: process.env.BLOB_READ_WRITE_TOKEN || undefined });
+      if (result?.statusCode !== 200 || !result.stream) return new Uint8Array();
+      return new Uint8Array(await new Response(result.stream).arrayBuffer());
+    })());
   }
 
-  const zipBytes = await zip.generateAsync({ type: "uint8array" });
-  return new NextResponse(new Uint8Array(zipBytes), {
+  return new NextResponse(zipToWebStream(zip), {
     headers: {
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="workload-photos.zip"`,
