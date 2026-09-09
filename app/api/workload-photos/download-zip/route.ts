@@ -6,6 +6,23 @@ import { db } from "../../../../lib/db/client";
 import { workloadPhotos } from "../../../../lib/db/schema";
 import { inArray } from "drizzle-orm";
 
+// Give this route more time than the platform default before Vercel kills
+// it -- a killed-mid-stream function otherwise looks to the browser like a
+// download that hangs forever ("Preparing download...") instead of a clean
+// error, since the connection never properly closes.
+export const maxDuration = 60;
+
+// A single slow/stuck blob fetch must never be able to stall the *entire*
+// archive indefinitely -- if one photo doesn't resolve within this window,
+// it's skipped (empty entry) so the rest of the batch still completes.
+const PER_FILE_TIMEOUT_MS = 20_000;
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 // Bridges JSZip's Node-stream-style internal stream to a Web ReadableStream,
 // so the whole archive is never buffered into memory before responding --
 // necessary for real, uncompressed multi-MB photos, which a fully-buffered
@@ -52,11 +69,12 @@ export async function POST(req: NextRequest) {
     // once up front. Raw bytes throughout, no re-encoding: original quality
     // preserved.
     const pathname = photo.pathname;
-    zip.file(name, (async () => {
+    const fetchOne = (async () => {
       const result = await get(pathname, { access: "private", token: process.env.BLOB_READ_WRITE_TOKEN || undefined });
       if (result?.statusCode !== 200 || !result.stream) return new Uint8Array();
       return new Uint8Array(await new Response(result.stream).arrayBuffer());
-    })());
+    })().catch(() => new Uint8Array());
+    zip.file(name, withTimeout(fetchOne, PER_FILE_TIMEOUT_MS, new Uint8Array()));
   }
 
   return new NextResponse(zipToWebStream(zip), {

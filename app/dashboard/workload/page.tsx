@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Users, AlertCircle, Upload, Download, Trash2, X, CheckSquare, Square, Loader2 } from "lucide-react";
+import { Users, AlertCircle, Upload, Download, Trash2, CheckSquare, Square, Loader2 } from "lucide-react";
 import { upload } from "@vercel/blob/client";
 
 interface MemberLoad {
@@ -13,10 +13,6 @@ interface MemberLoad {
 
 interface WorkloadPhoto { id: string; name: string; url: string; pathname: string | null; createdAt: string }
 
-function photoHref(p: WorkloadPhoto) {
-  return p.pathname ? `/api/blob/download?pathname=${encodeURIComponent(p.pathname)}&name=${encodeURIComponent(p.name)}` : p.url;
-}
-
 export default function WorkloadPage() {
   const [data, setData] = useState<MemberLoad[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +22,6 @@ export default function WorkloadPage() {
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
-  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
 
   const loadPhotos = () => fetch("/api/workload-photos").then(r => r.json()).then(setPhotos);
 
@@ -65,9 +60,15 @@ export default function WorkloadPage() {
     setDownloading(true);
     try {
       const ids = [...selected];
+      // Never let the button hang forever, even if the connection stalls
+      // instead of erroring cleanly server-side.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 75_000);
       const res = await fetch("/api/workload-photos/download-zip", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       if (!res.ok) throw new Error("Download failed");
       const blob = await res.blob();
       const a = document.createElement("a");
@@ -75,8 +76,10 @@ export default function WorkloadPage() {
       a.download = "workload-photos.zip";
       a.click();
       URL.revokeObjectURL(a.href);
-    } catch {
-      alert("Download failed. Please try again.");
+    } catch (err) {
+      alert((err as Error)?.name === "AbortError"
+        ? "Download timed out. Try selecting fewer photos at once."
+        : "Download failed. Please try again.");
     } finally {
       setDownloading(false);
     }
@@ -193,35 +196,24 @@ export default function WorkloadPage() {
             <p className="text-sm">No photos uploaded yet.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          // Plain list, not a thumbnail grid -- no image bytes are fetched
+          // just to browse the list, only filenames/dates from the DB. Avoids
+          // pulling full-resolution originals just to render a small preview.
+          <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 bg-white">
             {photos.map(p => {
               const isSelected = selected.has(p.id);
               return (
-                <div key={p.id} className={`relative rounded-xl overflow-hidden border bg-white ${isSelected ? "border-blue-400 ring-2 ring-blue-200" : "border-gray-200"}`}>
-                  <button onClick={() => toggleSelect(p.id)} title={isSelected ? "Deselect" : "Select"}
-                    className="absolute top-1.5 left-1.5 z-10 bg-white/90 rounded-md p-0.5 text-blue-600 shadow-sm">
-                    {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4 text-gray-400" />}
-                  </button>
-                  <button onClick={() => setPreviewSrc(photoHref(p))} className="block w-full aspect-square bg-gray-50">
-                    <img src={photoHref(p)} alt={p.name} className="w-full h-full object-cover" loading="lazy" />
-                  </button>
-                  <p className="text-[11px] text-gray-500 truncate px-1.5 py-1" title={p.name}>{p.name}</p>
+                <div key={p.id} onClick={() => toggleSelect(p.id)}
+                  className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer ${isSelected ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+                  {isSelected ? <CheckSquare className="w-4 h-4 text-blue-600 flex-shrink-0" /> : <Square className="w-4 h-4 text-gray-300 flex-shrink-0" />}
+                  <p className="text-sm text-gray-700 truncate flex-1">{p.name}</p>
+                  <p className="text-xs text-gray-400 flex-shrink-0">{new Date(p.createdAt).toLocaleDateString()}</p>
                 </div>
               );
             })}
           </div>
         )}
       </div>
-
-      {previewSrc && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-6" onClick={() => setPreviewSrc(null)}>
-          <button onClick={() => setPreviewSrc(null)} className="absolute top-4 right-4 text-white/80 hover:text-white">
-            <X className="w-6 h-6" />
-          </button>
-          <img src={previewSrc} alt="Preview" onClick={e => e.stopPropagation()}
-            className="max-w-full max-h-full rounded-lg shadow-2xl object-contain" />
-        </div>
-      )}
     </div>
   );
 }
