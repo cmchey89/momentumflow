@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Users, AlertCircle, Upload, Download, Trash2, CheckSquare, Square, Loader2 } from "lucide-react";
 import { upload } from "@vercel/blob/client";
+import JSZip from "jszip";
 
 interface MemberLoad {
   name: string;
@@ -22,6 +23,7 @@ export default function WorkloadPage() {
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<{ done: number; total: number } | null>(null);
 
   const loadPhotos = () => fetch("/api/workload-photos").then(r => r.json()).then(setPhotos);
 
@@ -56,32 +58,61 @@ export default function WorkloadPage() {
   const selectAll = () => setSelected(new Set(photos.map(p => p.id)));
   const clearSelection = () => setSelected(new Set());
 
+  // Zips in the browser instead of routing everything through one serverless
+  // function call -- for large batches (dozens of full-resolution photos)
+  // that avoids the platform's execution-time and memory ceilings entirely,
+  // at the cost of the work happening in this tab instead of on the server.
   const downloadSelected = async () => {
+    const targets = photos.filter(p => selected.has(p.id));
+    if (targets.length === 0) return;
     setDownloading(true);
+    setDownloadProgress({ done: 0, total: targets.length });
     try {
-      const ids = [...selected];
-      // Never let the button hang forever, even if the connection stalls
-      // instead of erroring cleanly server-side.
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 75_000);
-      const res = await fetch("/api/workload-photos/download-zip", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!res.ok) throw new Error("Download failed");
-      const blob = await res.blob();
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+      let done = 0;
+
+      // Bounded concurrency (6 at a time -- matches the browser's own
+      // per-origin connection limit, so going higher wouldn't help anyway).
+      const CONCURRENCY = 6;
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < targets.length) {
+          const photo = targets[cursor++];
+          try {
+            if (photo.pathname) {
+              const href = `/api/blob/download?pathname=${encodeURIComponent(photo.pathname)}&name=${encodeURIComponent(photo.name)}`;
+              const res = await fetch(href);
+              if (res.ok) {
+                const bytes = await res.arrayBuffer();
+                let name = photo.name;
+                if (usedNames.has(name)) {
+                  const dot = name.lastIndexOf(".");
+                  name = `${dot > 0 ? name.slice(0, dot) : name} (${photo.id.slice(0, 8)})${dot > 0 ? name.slice(dot) : ""}`;
+                }
+                usedNames.add(name);
+                zip.file(name, bytes); // raw bytes, no re-encoding
+              }
+            }
+          } finally {
+            done++;
+            setDownloadProgress({ done, total: targets.length });
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
+      a.href = URL.createObjectURL(zipBlob);
       a.download = "workload-photos.zip";
       a.click();
       URL.revokeObjectURL(a.href);
-    } catch (err) {
-      alert((err as Error)?.name === "AbortError"
-        ? "Download timed out. Try selecting fewer photos at once."
-        : "Download failed. Please try again.");
+    } catch {
+      alert("Download failed. Please try again.");
     } finally {
       setDownloading(false);
+      setDownloadProgress(null);
     }
   };
 
@@ -172,7 +203,7 @@ export default function WorkloadPage() {
                 <button onClick={downloadSelected} disabled={downloading}
                   className="flex items-center gap-1.5 border border-gray-300 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-50 active:scale-95 active:bg-gray-100 transition-transform disabled:opacity-70 disabled:cursor-wait disabled:active:scale-100">
                   {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                  {downloading ? "Preparing download…" : "Download"}
+                  {downloading ? `Zipping ${downloadProgress?.done ?? 0}/${downloadProgress?.total ?? 0}…` : "Download"}
                 </button>
                 <button onClick={deleteSelected} className="flex items-center gap-1.5 border border-red-200 text-red-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-red-50">
                   <Trash2 className="w-3.5 h-3.5" /> Delete
