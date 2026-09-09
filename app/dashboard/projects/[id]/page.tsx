@@ -219,8 +219,8 @@ const STATUS_PILL: Record<string, string> = {
 function statusPillClass(t: PlanTask, today: number): string {
   return t.status === "done" ? STATUS_PILL.done : STATUS_PILL[`${t.status}:${taskRiskOf(t, today)}`];
 }
-const TAB_LABELS: Record<"background" | "plan" | "finance", string> = {
-  background: "Background", plan: "Plan", finance: "Finance",
+const TAB_LABELS: Record<"background" | "plan" | "finance" | "changelog", string> = {
+  background: "Background", plan: "Plan", finance: "Finance", changelog: "Change Logs",
 };
 
 function fmtMoney(n: number) { return `$${n.toLocaleString()}`; }
@@ -299,7 +299,7 @@ function longPressHandlers(onActivate: () => void, delay = 500) {
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [tab, setTab] = useState<"background" | "plan" | "finance">("background");
+  const [tab, setTab] = useState<"background" | "plan" | "finance" | "changelog">("background");
   const projectUrl = `/api/projects/${id}`;
   const backgroundUrl = `/api/projects/${id}/background`;
   const stagesUrl = `/api/projects/${id}/stages`;
@@ -661,7 +661,7 @@ export default function ProjectDetailPage() {
       </div>
 
       <div className="flex border-b border-gray-200 mb-6">
-        {(["background", "plan", "finance"] as const).map(t => (
+        {(["background", "plan", "finance", "changelog"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm -mb-px border-b-2 ${tab === t ? "border-blue-600 text-blue-600 font-medium" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
             {TAB_LABELS[t]}
@@ -704,6 +704,10 @@ export default function ProjectDetailPage() {
 
           <div className={tab === "finance" ? "" : "hidden"}>
             <FinanceTab projectId={id} />
+          </div>
+
+          <div className={tab === "changelog" ? "" : "hidden"}>
+            <ChangeLogTab projectId={id} />
           </div>
         </>
       )}
@@ -2644,6 +2648,178 @@ function ImageLightbox({ src, onClose }: { src: string; onClose: () => void }) {
       </button>
       <img src={src} alt="Attached photo" onClick={e => e.stopPropagation()}
         className="max-w-full max-h-full rounded-lg shadow-2xl object-contain" />
+    </div>
+  );
+}
+
+// ── Change Log Tab ────────────────────────────────────────────────────────
+// A manually-maintained log of updates, one entry per meeting/week, grouped
+// by year -- for reviewing "what changed" in weekly meetings.
+
+interface ChangeLogEntry { id: string; weekLabel: string; title: string; createdAt: string }
+interface ChangeLogItem { id: string; entryId: string; text: string; sortOrder: number }
+interface ChangeLogData { entries: ChangeLogEntry[]; items: ChangeLogItem[] }
+
+function ChangeLogTab({ projectId }: { projectId: string }) {
+  const url = `/api/projects/${projectId}/changelog`;
+  const [data, setData] = useState<ChangeLogData | null>(() => getCached(url) ?? null);
+  const [showAddEntry, setShowAddEntry] = useState(false);
+  const [newWeekLabel, setNewWeekLabel] = useState("");
+  const [newTitle, setNewTitle] = useState("New Updates");
+  const [newBullets, setNewBullets] = useState("");
+  const [addingItemFor, setAddingItemFor] = useState<string | null>(null);
+  const [newItemText, setNewItemText] = useState("");
+
+  const load = useCallback(() => { fetchCached<ChangeLogData>(url).then(setData); }, [url]);
+  useEffect(() => { load(); }, [load]);
+
+  const entries = data?.entries ?? [];
+  const items = data?.items ?? [];
+
+  // entries already come back newest-first from the API, so grouping preserves that order.
+  const byYear: Record<string, ChangeLogEntry[]> = {};
+  for (const e of entries) {
+    const year = new Date(e.createdAt).getFullYear().toString();
+    if (!byYear[year]) byYear[year] = [];
+    byYear[year].push(e);
+  }
+  const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
+
+  const addEntry = async () => {
+    if (!newWeekLabel.trim()) return;
+    const res = await fetch(url, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weekLabel: newWeekLabel, title: newTitle }),
+    });
+    const entry = await res.json();
+    const lines = newBullets.split("\n").map(l => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      await fetch(`/api/changelog-entries/${entry.id}/items`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: line }),
+      });
+    }
+    setNewWeekLabel(""); setNewTitle("New Updates"); setNewBullets(""); setShowAddEntry(false);
+    load();
+  };
+  const patchEntry = async (id: string, patch: Record<string, unknown>) => {
+    await fetch(`/api/changelog-entries/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+    });
+    load();
+  };
+  const deleteEntry = async (id: string) => {
+    if (!confirm("Delete this changelog entry and all its points?")) return;
+    await fetch(`/api/changelog-entries/${id}`, { method: "DELETE" });
+    load();
+  };
+  const addItem = async (entryId: string) => {
+    if (!newItemText.trim()) return;
+    await fetch(`/api/changelog-entries/${entryId}/items`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: newItemText }),
+    });
+    setNewItemText(""); setAddingItemFor(null);
+    load();
+  };
+  const patchItem = async (id: string, text: string) => {
+    await fetch(`/api/changelog-items/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
+    });
+    load();
+  };
+  const deleteItem = async (id: string) => {
+    await fetch(`/api/changelog-items/${id}`, { method: "DELETE" });
+    load();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Change Logs</h3>
+          <p className="text-xs text-gray-400 mt-0.5">A running log of updates for weekly / meeting discussions</p>
+        </div>
+        <button onClick={() => setShowAddEntry(true)} className="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700">
+          <Plus className="w-3.5 h-3.5" /> New entry
+        </button>
+      </div>
+
+      {showAddEntry && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6 space-y-2">
+          <div className="flex gap-2">
+            <input autoFocus value={newWeekLabel} onChange={e => setNewWeekLabel(e.target.value)} placeholder="Week label (e.g. WK37.2.26)"
+              className="flex-1 text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
+            <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Title"
+              className="flex-1 text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
+          </div>
+          <textarea value={newBullets} onChange={e => setNewBullets(e.target.value)} placeholder="Update points, one per line (optional)"
+            rows={4} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 resize-none" />
+          <div className="flex gap-2 pt-1">
+            <button onClick={addEntry} className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg font-medium">Add entry</button>
+            <button onClick={() => setShowAddEntry(false)} className="border border-gray-300 text-sm px-3 py-1.5 rounded-lg">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {entries.length === 0 && !showAddEntry ? (
+        <div className="text-center py-16 text-gray-400">
+          <p>No change log entries yet. Add one after your next meeting.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {years.map(year => (
+            <div key={year}>
+              <h4 className="text-sm font-bold text-gray-700 mb-2">{year}</h4>
+              <div className="space-y-3">
+                {byYear[year].map(entry => {
+                  const entryItems = items.filter(i => i.entryId === entry.id).sort((a, b) => a.sortOrder - b.sortOrder);
+                  return (
+                    <div key={entry.id} className="bg-white border border-gray-200 rounded-xl p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <EditableCell value={entry.weekLabel} onSave={v => patchEntry(entry.id, { weekLabel: v })}
+                            inputClass="w-32 font-mono text-sm font-semibold" textClass="font-mono text-sm font-semibold text-blue-600" />
+                          <span className="text-gray-300">·</span>
+                          <EditableCell value={entry.title} onSave={v => patchEntry(entry.id, { title: v })}
+                            inputClass="w-48 text-sm" textClass="text-sm font-medium text-gray-700" />
+                        </div>
+                        <button onClick={() => deleteEntry(entry.id)} className="text-gray-300 hover:text-red-400"><X className="w-4 h-4" /></button>
+                      </div>
+                      {entryItems.length > 0 && (
+                        <ul className="space-y-1 mb-2">
+                          {entryItems.map(item => (
+                            <li key={item.id} className="flex items-start gap-2 text-sm text-gray-600">
+                              <span className="text-gray-300 mt-1">•</span>
+                              <div className="flex-1 flex items-center justify-between gap-2">
+                                <EditableCell value={item.text} onSave={v => patchItem(item.id, v)}
+                                  inputClass="w-full text-sm" textClass="text-sm text-gray-600" />
+                                <button onClick={() => deleteItem(item.id)} className="text-gray-200 hover:text-red-400 flex-shrink-0"><X className="w-3 h-3" /></button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {addingItemFor === entry.id ? (
+                        <div className="flex gap-2 mt-2">
+                          <input autoFocus value={newItemText} onChange={e => setNewItemText(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") addItem(entry.id); if (e.key === "Escape") setAddingItemFor(null); }}
+                            placeholder="New point…" className="flex-1 text-sm border border-gray-300 rounded-lg px-2.5 py-1" />
+                          <button onClick={() => addItem(entry.id)} className="text-sm text-blue-600 font-medium">Add</button>
+                          <button onClick={() => setAddingItemFor(null)} className="text-gray-400"><X className="w-4 h-4" /></button>
+                        </div>
+                      ) : (
+                        <button onClick={() => { setAddingItemFor(entry.id); setNewItemText(""); }} className="text-xs text-blue-600 flex items-center gap-1 hover:text-blue-700">
+                          <Plus className="w-3 h-3" /> Add point
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

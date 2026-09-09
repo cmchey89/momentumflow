@@ -137,6 +137,24 @@ export const projectFiles = pgTable("project_files", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Manually-maintained project changelog — one entry per meeting/week, each
+// with a free-text week label (e.g. "WK36.5.26") and a bullet list of
+// updates, grouped by year for the Change Logs tab.
+export const changeLogEntries = pgTable("change_log_entries", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  weekLabel: text("week_label").notNull(),
+  title: text("title").notNull().default("New Updates"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const changeLogItems = pgTable("change_log_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  entryId: uuid("entry_id").references(() => changeLogEntries.id, { onDelete: "cascade" }).notNull(),
+  text: text("text").notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+});
+
 export const stageStatusEnum = pgEnum("stage_status", ["pending", "in_progress", "done"]);
 
 export const projectStages = pgTable("project_stages", {
