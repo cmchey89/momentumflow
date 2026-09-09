@@ -1,7 +1,7 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { History } from "lucide-react";
-import { getCached, fetchCached } from "../../lib/pageCache";
+import { getCached, fetchCached, subscribeCached } from "../../lib/pageCache";
 
 interface ChangeLogEntry { id: string; weekLabel: string; title: string; createdAt: string }
 interface ChangeLogItem { id: string; entryId: string; text: string; sortOrder: number }
@@ -15,8 +15,15 @@ export default function ChangeLogSidePanel({ projectId }: { projectId: string })
   const url = `/api/projects/${projectId}/changelog`;
   const [data, setData] = useState<ChangeLogData | null>(() => getCached(url) ?? null);
 
-  const load = useCallback(() => { fetchCached<ChangeLogData>(url).then(setData); }, [url]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    // Initial (or stale-while-revalidate) fetch -- this is the only thing that
+    // ever triggers a network request.
+    fetchCached<ChangeLogData>(url).then(setData);
+    // The Change Logs tab writes to this same cache key on every add/edit/
+    // delete; when it does, just re-read the now-updated cache instead of
+    // fetching again -- that keeps the panel live without a refetch loop.
+    return subscribeCached(url, () => setData(getCached<ChangeLogData>(url) ?? null));
+  }, [url]);
 
   const entries = data?.entries ?? [];
   const items = data?.items ?? [];
