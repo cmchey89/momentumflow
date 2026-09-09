@@ -36,6 +36,18 @@ export const personalTaskAttachments = pgTable("personal_task_attachments", {
   pathname: text("pathname"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+// Workload tab photo gallery -- standalone, not tied to any project. Uploaded
+// files go straight to private Blob storage unaltered (no client-side resize
+// or recompression), and pathname is used to serve/delete them.
+export const workloadPhotos = pgTable("workload_photos", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  url: text("url").notNull(),
+  pathname: text("pathname"),
+  uploadedBy: text("uploaded_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const teamEnum = pgEnum("team", ["network", "osp", "finance", "management"]);
 export const handoffStatusEnum = pgEnum("handoff_status", ["active", "pending", "returned"]);
 export const handoffRecordStatusEnum = pgEnum("handoff_record_status", ["pending", "resolved", "returned"]);
