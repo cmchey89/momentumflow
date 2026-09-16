@@ -167,6 +167,26 @@ export const changeLogItems = pgTable("change_log_items", {
   sortOrder: integer("sort_order").default(0).notNull(),
 });
 
+// One row per meeting, with a bullet list of discussion points for the
+// Meeting Minutes tab. Separate from the changelog (which is a free-text
+// weekly summary) — minutes are pinned to an actual meeting date and record
+// who attended.
+export const meetingMinutes = pgTable("meeting_minutes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  meetingDate: date("meeting_date").notNull(),
+  title: text("title").notNull().default("Meeting Minutes"),
+  attendees: text("attendees"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const meetingMinuteItems = pgTable("meeting_minute_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  meetingId: uuid("meeting_id").references(() => meetingMinutes.id, { onDelete: "cascade" }).notNull(),
+  text: text("text").notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+});
+
 export const stageStatusEnum = pgEnum("stage_status", ["pending", "in_progress", "done"]);
 
 export const projectStages = pgTable("project_stages", {
