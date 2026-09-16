@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ClipboardList, Plus, X } from "lucide-react";
 import { getCached, fetchCached } from "../../../lib/pageCache";
 
-interface Project { id: string; name: string }
 interface MeetingMinute { id: string; meetingDate: string; title: string; attendees: string | null; createdAt: string }
 interface MeetingMinuteItem { id: string; meetingId: string; text: string; sortOrder: number }
 interface MeetingMinutesData { meetings: MeetingMinute[]; items: MeetingMinuteItem[] }
@@ -51,56 +50,9 @@ function EditableCell({
   );
 }
 
+const url = "/api/meeting-minutes";
+
 export default function MeetingMinutesPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/projects").then(r => r.json()).then((p: Project[]) => {
-      setProjects(p);
-      if (p.length > 0) setSelectedProject(p[0].id);
-    });
-  }, []);
-
-  return (
-    <div className="flex h-full">
-      <div className="w-56 border-r border-gray-200 bg-white p-4 overflow-y-auto flex-shrink-0">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Projects</p>
-        {projects.length === 0 ? (
-          <p className="text-xs text-gray-400">No projects yet</p>
-        ) : (
-          <div className="space-y-1">
-            {projects.map(p => (
-              <button
-                key={p.id}
-                onClick={() => setSelectedProject(p.id)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                  selectedProject === p.id ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-600 hover:bg-gray-100"
-                }`}
-              >
-                {p.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-8">
-        {selectedProject ? (
-          <MeetingMinutesPanel key={selectedProject} projectId={selectedProject} projectName={projects.find(p => p.id === selectedProject)?.name ?? ""} />
-        ) : (
-          <div className="text-center text-gray-400 py-16">
-            <ClipboardList className="w-10 h-10 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">Select a project to view its meeting minutes.</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function MeetingMinutesPanel({ projectId, projectName }: { projectId: string; projectName: string }) {
-  const url = `/api/projects/${projectId}/meeting-minutes`;
   const [data, setData] = useState<MeetingMinutesData | null>(() => getCached(url) ?? null);
   const [showAddMeeting, setShowAddMeeting] = useState(false);
   const [newDate, setNewDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -110,7 +62,7 @@ function MeetingMinutesPanel({ projectId, projectName }: { projectId: string; pr
   const [addingItemFor, setAddingItemFor] = useState<string | null>(null);
   const [newItemText, setNewItemText] = useState("");
 
-  const load = useCallback(() => { fetchCached<MeetingMinutesData>(url).then(setData); }, [url]);
+  const load = useCallback(() => { fetchCached<MeetingMinutesData>(url).then(setData); }, []);
   useEffect(() => { load(); }, [load]);
 
   const meetings = data?.meetings ?? [];
@@ -173,11 +125,11 @@ function MeetingMinutesPanel({ projectId, projectName }: { projectId: string; pr
   };
 
   return (
-    <div>
+    <div className="p-8 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Meeting Minutes</h1>
-          <p className="text-gray-500 mt-1 text-sm">{projectName}</p>
+          <p className="text-gray-500 mt-1 text-sm">A standalone record of what was discussed and agreed at each meeting</p>
         </div>
         <button onClick={() => setShowAddMeeting(true)} className="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700">
           <Plus className="w-3.5 h-3.5" /> New meeting

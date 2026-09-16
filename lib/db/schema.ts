@@ -168,12 +168,11 @@ export const changeLogItems = pgTable("change_log_items", {
 });
 
 // One row per meeting, with a bullet list of discussion points for the
-// Meeting Minutes tab. Separate from the changelog (which is a free-text
-// weekly summary) — minutes are pinned to an actual meeting date and record
-// who attended.
+// standalone Meeting Minutes page. Not tied to any project — separate from
+// the changelog (which is per-project) — minutes are pinned to an actual
+// meeting date and record who attended.
 export const meetingMinutes = pgTable("meeting_minutes", {
   id: uuid("id").defaultRandom().primaryKey(),
-  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   meetingDate: date("meeting_date").notNull(),
   title: text("title").notNull().default("Meeting Minutes"),
   attendees: text("attendees"),
