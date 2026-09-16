@@ -167,6 +167,15 @@ export const changeLogItems = pgTable("change_log_items", {
   sortOrder: integer("sort_order").default(0).notNull(),
 });
 
+// A saved directory of people's names, so they can be picked from a list
+// instead of retyped every time (currently used for meeting attendees).
+// Not scoped to a project or team — just a flat, reusable name list.
+export const people = pgTable("people", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // One row per meeting, with a bullet list of discussion points for the
 // standalone Meeting Minutes page. Not tied to any project — separate from
 // the changelog (which is per-project) — minutes are pinned to an actual

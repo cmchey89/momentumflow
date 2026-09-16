@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { jsPDF } from "jspdf";
 import { CheckSquare, ClipboardList, Download, Plus, Square, X } from "lucide-react";
-import { getCached, fetchCached } from "../../../lib/pageCache";
+import { getCached, setCached, fetchCached, subscribeCached } from "../../../lib/pageCache";
 
 interface MeetingMinute { id: string; meetingDate: string; title: string; attendees: string | null; createdAt: string }
 interface MeetingMinuteItem { id: string; meetingId: string; text: string; sortOrder: number }
@@ -147,6 +147,81 @@ function EditableCell({
       {displayValue !== undefined ? displayValue
         : value ? value : <span className="text-gray-300 italic text-xs">{placeholder}</span>}
     </span>
+  );
+}
+
+interface Person { id: string; name: string }
+const peopleUrl = "/api/people";
+
+// Chip-style attendee input backed by a saved, reusable name list — pick a
+// saved name from the dropdown, or type a new one and it's saved for next
+// time. `value`/`onChange` stay a plain comma-separated string so the rest
+// of the app (schema, PDF export) doesn't need to know this exists.
+function AttendeesPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [people, setPeople] = useState<Person[]>(() => getCached<Person[]>(peopleUrl) ?? []);
+  const [input, setInput] = useState("");
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    fetchCached<Person[]>(peopleUrl).then(setPeople);
+    return subscribeCached(peopleUrl, () => setPeople(getCached<Person[]>(peopleUrl) ?? []));
+  }, []);
+
+  const selected = value.split(",").map(s => s.trim()).filter(Boolean);
+  const commit = (names: string[]) => onChange(names.join(", "));
+
+  const addName = async (raw: string) => {
+    const name = raw.trim();
+    setInput("");
+    if (!name || selected.some(s => s.toLowerCase() === name.toLowerCase())) return;
+    commit([...selected, name]);
+    if (!people.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+      const res = await fetch(peopleUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+      const person = await res.json();
+      const next = [...(getCached<Person[]>(peopleUrl) ?? people), person].sort((a, b) => a.name.localeCompare(b.name));
+      setCached(peopleUrl, next);
+    }
+  };
+  const removeName = (name: string) => commit(selected.filter(n => n !== name));
+
+  const suggestions = people.filter(p =>
+    !selected.some(s => s.toLowerCase() === p.name.toLowerCase()) &&
+    (input === "" || p.name.toLowerCase().includes(input.toLowerCase()))
+  );
+
+  return (
+    <div className="relative">
+      <div className="flex flex-wrap items-center gap-1.5 border border-gray-300 rounded-lg px-2 py-1.5 bg-white focus-within:ring-1 focus-within:ring-blue-400">
+        {selected.map(name => (
+          <span key={name} className="flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-medium pl-2 pr-1 py-0.5 rounded-full">
+            {name}
+            <button type="button" onClick={() => removeName(name)} className="hover:text-blue-900"><X className="w-3 h-3" /></button>
+          </span>
+        ))}
+        <input
+          value={input}
+          onChange={e => { setInput(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onKeyDown={e => {
+            if (e.key === "Enter") { e.preventDefault(); addName(input); }
+            if (e.key === "Backspace" && !input && selected.length > 0) removeName(selected[selected.length - 1]);
+          }}
+          placeholder={selected.length === 0 ? "Add attendee…" : ""}
+          className="flex-1 min-w-[100px] text-sm outline-none py-0.5"
+        />
+      </div>
+      {open && suggestions.length > 0 && (
+        <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {suggestions.map(p => (
+            <button key={p.id} type="button" onMouseDown={e => e.preventDefault()} onClick={() => addName(p.name)}
+              className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-blue-50">
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -302,8 +377,7 @@ export default function MeetingMinutesPage() {
             <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Title"
               className="flex-1 text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
           </div>
-          <input value={newAttendees} onChange={e => setNewAttendees(e.target.value)} placeholder="Attendees (comma-separated)"
-            className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
+          <AttendeesPicker value={newAttendees} onChange={setNewAttendees} />
           <textarea value={newAgenda} onChange={e => setNewAgenda(e.target.value)} placeholder="Agenda, one topic per line (optional)"
             rows={3} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 resize-none" />
           <textarea value={newPoints} onChange={e => setNewPoints(e.target.value)} placeholder="Discussion points, one per line (optional)"
@@ -349,10 +423,10 @@ export default function MeetingMinutesPage() {
                           <button onClick={() => deleteMeeting(meeting.id)} className="text-gray-300 hover:text-red-400"><X className="w-4 h-4" /></button>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-400 mb-3">
-                        Attendees: <EditableCell value={meeting.attendees ?? ""} onSave={v => patchMeeting(meeting.id, { attendees: v })}
-                          inputClass="w-64 text-xs" textClass="text-xs text-gray-500" placeholder="Click to add attendees" />
-                      </p>
+                      <div className="mb-3">
+                        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Attendees</p>
+                        <AttendeesPicker value={meeting.attendees ?? ""} onChange={v => patchMeeting(meeting.id, { attendees: v })} />
+                      </div>
 
                       {/* Agenda */}
                       <div className="mb-3">
