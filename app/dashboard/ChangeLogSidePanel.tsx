@@ -37,12 +37,14 @@ export default function ChangeLogSidePanel({ projectId }: { projectId: string })
   const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
 
   return (
-    <aside className="w-72 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
+    <aside className="w-72 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-screen">
       <div className="px-4 py-3 border-b border-gray-200 flex items-center gap-2 flex-shrink-0">
         <History className="w-4 h-4 text-gray-400" />
         <h2 className="text-sm font-semibold text-gray-700">Change Logs</h2>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      {/* min-h-0 lets this flex child shrink below its content height so the
+          overflow actually scrolls instead of stretching the panel. */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
         {years.length === 0 ? (
           <p className="text-xs text-gray-400">No change log entries yet. Add one from the Change Logs tab.</p>
         ) : (
