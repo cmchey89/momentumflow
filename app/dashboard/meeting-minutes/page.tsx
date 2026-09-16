@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { jsPDF } from "jspdf";
 import { ClipboardList, Download, Plus, X } from "lucide-react";
 import { getCached, fetchCached } from "../../../lib/pageCache";
 
@@ -10,26 +11,71 @@ interface MeetingMinutesData { meetings: MeetingMinute[]; items: MeetingMinuteIt
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "—"; }
 function fmtDateLong(d: string) { return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }); }
 
-// Builds a plain-text .txt of one meeting's minutes and downloads it, so it
-// can be attached to an email straight from the file picker — no server
-// round trip, no new dependency.
-function exportMeetingAsTxt(meeting: MeetingMinute, points: string[]) {
-  const lines = [
-    meeting.title,
-    fmtDateLong(meeting.meetingDate),
-    "",
-    `Attendees: ${meeting.attendees?.trim() || "—"}`,
-    "",
-    "Discussion Points:",
-    ...(points.length > 0 ? points.map(p => `- ${p}`) : ["(none)"]),
-  ];
-  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+// Lays out one meeting's minutes on an A4 page and downloads it as a PDF, so
+// it can be attached to an email straight from the file picker — generated
+// entirely client-side, no server round trip.
+function exportMeetingAsPdf(meeting: MeetingMinute, points: string[]) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const marginX = 56;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const contentWidth = pageWidth - marginX * 2;
+  let y = 64;
+
+  const ensureSpace = (needed: number) => {
+    if (y + needed > pageHeight - 56) { doc.addPage(); y = 64; }
+  };
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  const titleLines = doc.splitTextToSize(meeting.title, contentWidth);
+  doc.text(titleLines, marginX, y);
+  y += titleLines.length * 22 + 4;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(107, 114, 128); // gray-500
+  doc.text(fmtDateLong(meeting.meetingDate), marginX, y);
+  y += 20;
+
+  doc.setDrawColor(229, 231, 235); // gray-200
+  doc.line(marginX, y, pageWidth - marginX, y);
+  y += 24;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(107, 114, 128);
+  doc.text("ATTENDEES", marginX, y);
+  y += 16;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(31, 41, 55); // gray-800
+  const attendeeLines = doc.splitTextToSize(meeting.attendees?.trim() || "—", contentWidth);
+  doc.text(attendeeLines, marginX, y);
+  y += attendeeLines.length * 15 + 24;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(107, 114, 128);
+  ensureSpace(16);
+  doc.text("DISCUSSION POINTS", marginX, y);
+  y += 18;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.setTextColor(31, 41, 55);
+  const bulletIndent = 14;
+  const pointsToRender = points.length > 0 ? points : ["(none)"];
+  for (const point of pointsToRender) {
+    const lines = doc.splitTextToSize(point, contentWidth - bulletIndent);
+    ensureSpace(lines.length * 15 + 6);
+    doc.text("•", marginX, y);
+    doc.text(lines, marginX + bulletIndent, y);
+    y += lines.length * 15 + 6;
+  }
+
   const safeTitle = meeting.title.replace(/[^\w\-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `${meeting.meetingDate}-${safeTitle || "meeting-minutes"}.txt`;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  doc.save(`${meeting.meetingDate}-${safeTitle || "meeting-minutes"}.pdf`);
 }
 
 // Click-to-edit span/input, same behavior as the one on the project detail
@@ -202,8 +248,8 @@ export default function MeetingMinutesPage() {
                             inputClass="w-48 text-sm" textClass="text-sm font-medium text-gray-700" />
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                          <button onClick={() => exportMeetingAsTxt(meeting, meetingItems.map(i => i.text))}
-                            title="Export as .txt — attach to an email" className="text-gray-300 hover:text-blue-500">
+                          <button onClick={() => exportMeetingAsPdf(meeting, meetingItems.map(i => i.text))}
+                            title="Export as PDF — attach to an email" className="text-gray-300 hover:text-blue-500">
                             <Download className="w-4 h-4" />
                           </button>
                           <button onClick={() => deleteMeeting(meeting.id)} className="text-gray-300 hover:text-red-400"><X className="w-4 h-4" /></button>
