@@ -186,6 +186,30 @@ export const meetingMinuteItems = pgTable("meeting_minute_items", {
   sortOrder: integer("sort_order").default(0).notNull(),
 });
 
+// Topics planned before the meeting — separate list from the discussion
+// points (meetingMinuteItems), which record what actually got covered.
+export const meetingAgendaItems = pgTable("meeting_agenda_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  meetingId: uuid("meeting_id").references(() => meetingMinutes.id, { onDelete: "cascade" }).notNull(),
+  text: text("text").notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+});
+
+export const actionItemStatusEnum = pgEnum("action_item_status", ["open", "done"]);
+
+// Follow-up tasks that came out of the meeting — the part that actually
+// needs chasing afterward, so it carries an owner and due date rather than
+// just being another bullet.
+export const meetingActionItems = pgTable("meeting_action_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  meetingId: uuid("meeting_id").references(() => meetingMinutes.id, { onDelete: "cascade" }).notNull(),
+  text: text("text").notNull(),
+  owner: text("owner"),
+  dueDate: date("due_date"),
+  status: actionItemStatusEnum("status").default("open").notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+});
+
 export const stageStatusEnum = pgEnum("stage_status", ["pending", "in_progress", "done"]);
 
 export const projectStages = pgTable("project_stages", {
