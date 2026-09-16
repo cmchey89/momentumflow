@@ -225,6 +225,11 @@ function AttendeesPicker({ value, onChange }: { value: string; onChange: (v: str
   );
 }
 
+// Matches the section-heading style already used on each meeting card
+// (Attendees/Agenda/Discussion Points/Action Items), reused here for the
+// new-meeting form's field labels so nothing goes unlabeled once typed in.
+const fieldLabelClass = "block text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1";
+
 const url = "/api/meeting-minutes";
 
 export default function MeetingMinutesPage() {
@@ -370,18 +375,33 @@ export default function MeetingMinutesPage() {
       </div>
 
       {showAddMeeting && (
-        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6 space-y-2">
+        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6 space-y-3">
           <div className="flex gap-2">
-            <input autoFocus type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
-              className="text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
-            <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Title"
-              className="flex-1 text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
+            <div>
+              <label className={fieldLabelClass}>Date</label>
+              <input autoFocus type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
+                className="text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
+            </div>
+            <div className="flex-1">
+              <label className={fieldLabelClass}>Title</label>
+              <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Title"
+                className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
+            </div>
           </div>
-          <AttendeesPicker value={newAttendees} onChange={setNewAttendees} />
-          <textarea value={newAgenda} onChange={e => setNewAgenda(e.target.value)} placeholder="Agenda, one topic per line (optional)"
-            rows={3} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 resize-none" />
-          <textarea value={newPoints} onChange={e => setNewPoints(e.target.value)} placeholder="Discussion points, one per line (optional)"
-            rows={4} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 resize-none" />
+          <div>
+            <label className={fieldLabelClass}>Attendees</label>
+            <AttendeesPicker value={newAttendees} onChange={setNewAttendees} />
+          </div>
+          <div>
+            <label className={fieldLabelClass}>Agenda <span className="normal-case font-normal text-gray-300">(optional)</span></label>
+            <textarea value={newAgenda} onChange={e => setNewAgenda(e.target.value)} placeholder="One topic per line"
+              rows={3} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 resize-none" />
+          </div>
+          <div>
+            <label className={fieldLabelClass}>Discussion Points <span className="normal-case font-normal text-gray-300">(optional)</span></label>
+            <textarea value={newPoints} onChange={e => setNewPoints(e.target.value)} placeholder="One point per line"
+              rows={4} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 resize-none" />
+          </div>
           <p className="text-xs text-gray-400">Action items can be added after the meeting is created.</p>
           <div className="flex gap-2 pt-1">
             <button onClick={addMeeting} className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg font-medium">Add meeting</button>
