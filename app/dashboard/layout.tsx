@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   LayoutDashboard, FolderKanban, CheckSquare,
   MessageSquare, LogOut, Layers, Users, BarChart2, Settings, Receipt,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, ClipboardList,
 } from "lucide-react";
 import ChangeLogSidePanel from "./ChangeLogSidePanel";
 
@@ -50,6 +50,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { href: "/dashboard/tasks", label: "My Tasks", icon: CheckSquare },
     { href: "/dashboard/workload", label: "Workload", icon: Users },
     { href: "/dashboard/chat", label: "Chat", icon: MessageSquare },
+    { href: "/dashboard/meeting-minutes", label: "Meeting Minutes", icon: ClipboardList },
     { href: "/dashboard/report", label: "Year-End Report", icon: BarChart2 },
     ...(me.role === "superadmin" || me.role === "manager" ? [{ href: "/dashboard/rate-catalog", label: "Rate Catalog", icon: Receipt }] : []),
     ...(me.role === "superadmin" || me.role === "manager" ? [{ href: "/dashboard/admin", label: "Admin", icon: Settings }] : []),

@@ -219,8 +219,8 @@ const STATUS_PILL: Record<string, string> = {
 function statusPillClass(t: PlanTask, today: number): string {
   return t.status === "done" ? STATUS_PILL.done : STATUS_PILL[`${t.status}:${taskRiskOf(t, today)}`];
 }
-const TAB_LABELS: Record<"background" | "plan" | "finance" | "changelog" | "minutes", string> = {
-  background: "Background", plan: "Plan", finance: "Finance", changelog: "Change Logs", minutes: "Meeting Minutes",
+const TAB_LABELS: Record<"background" | "plan" | "finance" | "changelog", string> = {
+  background: "Background", plan: "Plan", finance: "Finance", changelog: "Change Logs",
 };
 
 function fmtMoney(n: number) { return `$${n.toLocaleString()}`; }
@@ -299,7 +299,7 @@ function longPressHandlers(onActivate: () => void, delay = 500) {
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [tab, setTab] = useState<"background" | "plan" | "finance" | "changelog" | "minutes">("background");
+  const [tab, setTab] = useState<"background" | "plan" | "finance" | "changelog">("background");
   const projectUrl = `/api/projects/${id}`;
   const backgroundUrl = `/api/projects/${id}/background`;
   const stagesUrl = `/api/projects/${id}/stages`;
@@ -661,7 +661,7 @@ export default function ProjectDetailPage() {
       </div>
 
       <div className="flex border-b border-gray-200 mb-6">
-        {(["background", "plan", "finance", "changelog", "minutes"] as const).map(t => (
+        {(["background", "plan", "finance", "changelog"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm -mb-px border-b-2 ${tab === t ? "border-blue-600 text-blue-600 font-medium" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
             {TAB_LABELS[t]}
@@ -708,10 +708,6 @@ export default function ProjectDetailPage() {
 
           <div className={tab === "changelog" ? "" : "hidden"}>
             <ChangeLogTab projectId={id} />
-          </div>
-
-          <div className={tab === "minutes" ? "" : "hidden"}>
-            <MeetingMinutesTab projectId={id} />
           </div>
         </>
       )}
@@ -2813,183 +2809,6 @@ function ChangeLogTab({ projectId }: { projectId: string }) {
                         </div>
                       ) : (
                         <button onClick={() => { setAddingItemFor(entry.id); setNewItemText(""); }} className="text-xs text-blue-600 flex items-center gap-1 hover:text-blue-700">
-                          <Plus className="w-3 h-3" /> Add point
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Meeting Minutes Tab ────────────────────────────────────────────────
-
-interface MeetingMinute { id: string; meetingDate: string; title: string; attendees: string | null; createdAt: string }
-interface MeetingMinuteItem { id: string; meetingId: string; text: string; sortOrder: number }
-interface MeetingMinutesData { meetings: MeetingMinute[]; items: MeetingMinuteItem[] }
-
-function MeetingMinutesTab({ projectId }: { projectId: string }) {
-  const url = `/api/projects/${projectId}/meeting-minutes`;
-  const [data, setData] = useState<MeetingMinutesData | null>(() => getCached(url) ?? null);
-  const [showAddMeeting, setShowAddMeeting] = useState(false);
-  const [newDate, setNewDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [newTitle, setNewTitle] = useState("Meeting Minutes");
-  const [newAttendees, setNewAttendees] = useState("");
-  const [newPoints, setNewPoints] = useState("");
-  const [addingItemFor, setAddingItemFor] = useState<string | null>(null);
-  const [newItemText, setNewItemText] = useState("");
-
-  const load = useCallback(() => { fetchCached<MeetingMinutesData>(url).then(setData); }, [url]);
-  useEffect(() => { load(); }, [load]);
-
-  const meetings = data?.meetings ?? [];
-  const items = data?.items ?? [];
-
-  // meetings already come back newest-first from the API, so grouping preserves that order.
-  const byYear: Record<string, MeetingMinute[]> = {};
-  for (const m of meetings) {
-    const year = new Date(m.meetingDate).getFullYear().toString();
-    if (!byYear[year]) byYear[year] = [];
-    byYear[year].push(m);
-  }
-  const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
-
-  const addMeeting = async () => {
-    if (!newDate) return;
-    const res = await fetch(url, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ meetingDate: newDate, title: newTitle, attendees: newAttendees }),
-    });
-    const meeting = await res.json();
-    const lines = newPoints.split("\n").map(l => l.trim()).filter(Boolean);
-    for (const line of lines) {
-      await fetch(`/api/meeting-minutes/${meeting.id}/items`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: line }),
-      });
-    }
-    setNewDate(new Date().toISOString().slice(0, 10)); setNewTitle("Meeting Minutes"); setNewAttendees(""); setNewPoints(""); setShowAddMeeting(false);
-    load();
-  };
-  const patchMeeting = async (id: string, patch: Record<string, unknown>) => {
-    await fetch(`/api/meeting-minutes/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
-    });
-    load();
-  };
-  const deleteMeeting = async (id: string) => {
-    if (!confirm("Delete these meeting minutes and all their points?")) return;
-    await fetch(`/api/meeting-minutes/${id}`, { method: "DELETE" });
-    load();
-  };
-  const addItem = async (meetingId: string) => {
-    if (!newItemText.trim()) return;
-    await fetch(`/api/meeting-minutes/${meetingId}/items`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: newItemText }),
-    });
-    setNewItemText(""); setAddingItemFor(null);
-    load();
-  };
-  const patchItem = async (id: string, text: string) => {
-    await fetch(`/api/meeting-minute-items/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }),
-    });
-    load();
-  };
-  const deleteItem = async (id: string) => {
-    await fetch(`/api/meeting-minute-items/${id}`, { method: "DELETE" });
-    load();
-  };
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Meeting Minutes</h3>
-          <p className="text-xs text-gray-400 mt-0.5">Record of what was discussed and agreed at each meeting</p>
-        </div>
-        <button onClick={() => setShowAddMeeting(true)} className="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700">
-          <Plus className="w-3.5 h-3.5" /> New meeting
-        </button>
-      </div>
-
-      {showAddMeeting && (
-        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6 space-y-2">
-          <div className="flex gap-2">
-            <input autoFocus type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
-              className="text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
-            <input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Title"
-              className="flex-1 text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
-          </div>
-          <input value={newAttendees} onChange={e => setNewAttendees(e.target.value)} placeholder="Attendees (comma-separated)"
-            className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5" />
-          <textarea value={newPoints} onChange={e => setNewPoints(e.target.value)} placeholder="Discussion points, one per line (optional)"
-            rows={4} className="w-full text-sm border border-gray-300 rounded-lg px-2.5 py-1.5 resize-none" />
-          <div className="flex gap-2 pt-1">
-            <button onClick={addMeeting} className="bg-blue-600 text-white text-sm px-3 py-1.5 rounded-lg font-medium">Add meeting</button>
-            <button onClick={() => setShowAddMeeting(false)} className="border border-gray-300 text-sm px-3 py-1.5 rounded-lg">Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {meetings.length === 0 && !showAddMeeting ? (
-        <div className="text-center py-16 text-gray-400">
-          <p>No meeting minutes yet. Add one after your next meeting.</p>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {years.map(year => (
-            <div key={year}>
-              <h4 className="text-sm font-bold text-gray-700 mb-2">{year}</h4>
-              <div className="space-y-3">
-                {byYear[year].map(meeting => {
-                  const meetingItems = items.filter(i => i.meetingId === meeting.id).sort((a, b) => a.sortOrder - b.sortOrder);
-                  return (
-                    <div key={meeting.id} className="bg-white border border-gray-200 rounded-xl p-4">
-                      <div className="flex items-start justify-between mb-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <EditableCell value={meeting.meetingDate} type="date" onSave={v => patchMeeting(meeting.id, { meetingDate: v })}
-                            displayValue={fmtDate(meeting.meetingDate)} inputClass="w-32 font-mono text-sm font-semibold" textClass="font-mono text-sm font-semibold text-blue-600" />
-                          <span className="text-gray-300">·</span>
-                          <EditableCell value={meeting.title} onSave={v => patchMeeting(meeting.id, { title: v })}
-                            inputClass="w-48 text-sm" textClass="text-sm font-medium text-gray-700" />
-                        </div>
-                        <button onClick={() => deleteMeeting(meeting.id)} className="text-gray-300 hover:text-red-400"><X className="w-4 h-4" /></button>
-                      </div>
-                      <p className="text-xs text-gray-400 mb-2">
-                        Attendees: <EditableCell value={meeting.attendees ?? ""} onSave={v => patchMeeting(meeting.id, { attendees: v })}
-                          inputClass="w-64 text-xs" textClass="text-xs text-gray-500" placeholder="Click to add attendees" />
-                      </p>
-                      {meetingItems.length > 0 && (
-                        <ul className="space-y-1 mb-2">
-                          {meetingItems.map(item => (
-                            <li key={item.id} className="flex items-start gap-2 text-sm text-gray-600">
-                              <span className="text-gray-300 mt-1">•</span>
-                              <div className="flex-1 flex items-center justify-between gap-2">
-                                <EditableCell value={item.text} onSave={v => patchItem(item.id, v)}
-                                  inputClass="w-full text-sm" textClass="text-sm text-gray-600" />
-                                <button onClick={() => deleteItem(item.id)} className="text-gray-200 hover:text-red-400 flex-shrink-0"><X className="w-3 h-3" /></button>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {addingItemFor === meeting.id ? (
-                        <div className="flex gap-2 mt-2">
-                          <input autoFocus value={newItemText} onChange={e => setNewItemText(e.target.value)}
-                            onKeyDown={e => { if (e.key === "Enter") addItem(meeting.id); if (e.key === "Escape") setAddingItemFor(null); }}
-                            placeholder="New point…" className="flex-1 text-sm border border-gray-300 rounded-lg px-2.5 py-1" />
-                          <button onClick={() => addItem(meeting.id)} className="text-sm text-blue-600 font-medium">Add</button>
-                          <button onClick={() => setAddingItemFor(null)} className="text-gray-400"><X className="w-4 h-4" /></button>
-                        </div>
-                      ) : (
-                        <button onClick={() => { setAddingItemFor(meeting.id); setNewItemText(""); }} className="text-xs text-blue-600 flex items-center gap-1 hover:text-blue-700">
                           <Plus className="w-3 h-3" /> Add point
                         </button>
                       )}
