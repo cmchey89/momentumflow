@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ClipboardList, Plus, X } from "lucide-react";
+import { ClipboardList, Download, Plus, X } from "lucide-react";
 import { getCached, fetchCached } from "../../../lib/pageCache";
 
 interface MeetingMinute { id: string; meetingDate: string; title: string; attendees: string | null; createdAt: string }
@@ -8,6 +8,29 @@ interface MeetingMinuteItem { id: string; meetingId: string; text: string; sortO
 interface MeetingMinutesData { meetings: MeetingMinute[]; items: MeetingMinuteItem[] }
 
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "—"; }
+function fmtDateLong(d: string) { return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }); }
+
+// Builds a plain-text .txt of one meeting's minutes and downloads it, so it
+// can be attached to an email straight from the file picker — no server
+// round trip, no new dependency.
+function exportMeetingAsTxt(meeting: MeetingMinute, points: string[]) {
+  const lines = [
+    meeting.title,
+    fmtDateLong(meeting.meetingDate),
+    "",
+    `Attendees: ${meeting.attendees?.trim() || "—"}`,
+    "",
+    "Discussion Points:",
+    ...(points.length > 0 ? points.map(p => `- ${p}`) : ["(none)"]),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+  const safeTitle = meeting.title.replace(/[^\w\-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${meeting.meetingDate}-${safeTitle || "meeting-minutes"}.txt`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
 // Click-to-edit span/input, same behavior as the one on the project detail
 // page — duplicated locally since that one isn't exported.
@@ -178,7 +201,13 @@ export default function MeetingMinutesPage() {
                           <EditableCell value={meeting.title} onSave={v => patchMeeting(meeting.id, { title: v })}
                             inputClass="w-48 text-sm" textClass="text-sm font-medium text-gray-700" />
                         </div>
-                        <button onClick={() => deleteMeeting(meeting.id)} className="text-gray-300 hover:text-red-400"><X className="w-4 h-4" /></button>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button onClick={() => exportMeetingAsTxt(meeting, meetingItems.map(i => i.text))}
+                            title="Export as .txt — attach to an email" className="text-gray-300 hover:text-blue-500">
+                            <Download className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => deleteMeeting(meeting.id)} className="text-gray-300 hover:text-red-400"><X className="w-4 h-4" /></button>
+                        </div>
                       </div>
                       <p className="text-xs text-gray-400 mb-2">
                         Attendees: <EditableCell value={meeting.attendees ?? ""} onSave={v => patchMeeting(meeting.id, { attendees: v })}
