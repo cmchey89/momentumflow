@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { jsPDF } from "jspdf";
-import { CheckSquare, ClipboardList, Download, Plus, Square, X } from "lucide-react";
+import { CheckSquare, ChevronDown, ChevronRight, ClipboardList, Download, Plus, Square, X } from "lucide-react";
 import { getCached, setCached, fetchCached, subscribeCached } from "../../../lib/pageCache";
 
 interface MeetingMinute { id: string; meetingDate: string; title: string; attendees: string | null; createdAt: string }
@@ -250,6 +250,16 @@ export default function MeetingMinutesPage() {
   const [newActionOwner, setNewActionOwner] = useState("");
   const [newActionDue, setNewActionDue] = useState("");
 
+  // Meetings render collapsed (a compact list row) by default so a long
+  // history doesn't turn into one giant scroll of fully-expanded cards —
+  // click a row, or its chevron, to open the full agenda/points/actions.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => setExpandedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
   const load = useCallback(() => { fetchCached<MeetingMinutesData>(url).then(setData); }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -287,6 +297,7 @@ export default function MeetingMinutesPage() {
       });
     }
     setNewDate(new Date().toISOString().slice(0, 10)); setNewTitle("Meeting Minutes"); setNewAttendees(""); setNewAgenda(""); setNewPoints(""); setShowAddMeeting(false);
+    setExpandedIds(prev => new Set(prev).add(meeting.id));
     load();
   };
   const patchMeeting = async (id: string, patch: Record<string, unknown>) => {
@@ -425,10 +436,14 @@ export default function MeetingMinutesPage() {
                   const meetingItems = items.filter(i => i.meetingId === meeting.id).sort((a, b) => a.sortOrder - b.sortOrder);
                   const meetingAgenda = agendaItems.filter(a => a.meetingId === meeting.id).sort((a, b) => a.sortOrder - b.sortOrder);
                   const meetingActions = actionItems.filter(a => a.meetingId === meeting.id).sort((a, b) => a.sortOrder - b.sortOrder);
+                  const doneActions = meetingActions.filter(a => a.status === "done").length;
+                  const attendeeCount = (meeting.attendees ?? "").split(",").map(s => s.trim()).filter(Boolean).length;
+                  const isExpanded = expandedIds.has(meeting.id);
                   return (
                     <div key={meeting.id} className="bg-white border border-gray-200 rounded-xl p-4">
-                      <div className="flex items-start justify-between mb-1">
-                        <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-start justify-between">
+                        <div onClick={() => toggleExpanded(meeting.id)} className="flex items-center gap-2 flex-wrap cursor-pointer min-w-0">
+                          {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />}
                           <EditableCell value={meeting.meetingDate} type="date" onSave={v => patchMeeting(meeting.id, { meetingDate: v })}
                             displayValue={fmtDate(meeting.meetingDate)} inputClass="w-32 font-mono text-sm font-semibold" textClass="font-mono text-sm font-semibold text-blue-600" />
                           <span className="text-gray-300">·</span>
@@ -443,7 +458,22 @@ export default function MeetingMinutesPage() {
                           <button onClick={() => deleteMeeting(meeting.id)} className="text-gray-300 hover:text-red-400"><X className="w-4 h-4" /></button>
                         </div>
                       </div>
-                      <div className="mb-3">
+
+                      {!isExpanded && (
+                        <div onClick={() => toggleExpanded(meeting.id)} className="flex items-center gap-3 text-xs text-gray-400 mt-1.5 pl-[22px] cursor-pointer">
+                          <span>{attendeeCount > 0 ? `${attendeeCount} attendee${attendeeCount !== 1 ? "s" : ""}` : "No attendees"}</span>
+                          {meetingItems.length > 0 && <span>{meetingItems.length} point{meetingItems.length !== 1 ? "s" : ""}</span>}
+                          {meetingActions.length > 0 && (
+                            <span className={doneActions === meetingActions.length ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                              {doneActions}/{meetingActions.length} actions done
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {isExpanded && (
+                      <>
+                      <div className="mb-3 mt-2">
                         <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Attendees</p>
                         <AttendeesPicker value={meeting.attendees ?? ""} onChange={v => patchMeeting(meeting.id, { attendees: v })} />
                       </div>
@@ -564,6 +594,8 @@ export default function MeetingMinutesPage() {
                           </button>
                         )}
                       </div>
+                      </>
+                      )}
                     </div>
                   );
                 })}
